@@ -1,0 +1,293 @@
+import { useState, useMemo } from 'react';
+import { Customer, Server, Plan, Renewal, ManualAddition } from '../types';
+import { differenceInDays, isAfter, parseISO, format, addMonths } from 'date-fns';
+import { TrendingUp, TrendingDown, DollarSign, AlertCircle, MessageCircle, RefreshCw } from 'lucide-react';
+import { formatCurrency, formatWhatsappMessage } from '../utils';
+import { RenewModal } from '../components/RenewModal';
+
+interface DashboardProps {
+  customers: Customer[];
+  servers: Server[];
+  plans: Plan[];
+  whatsappMessage: string;
+  updateCustomer: (id: string, c: Partial<Customer>) => void;
+  renewals: Renewal[];
+  addRenewal: (r: Omit<Renewal, 'id'>) => void;
+  manualAdditions: ManualAddition[];
+}
+
+export function Dashboard({ customers, servers, plans, whatsappMessage, updateCustomer, renewals, addRenewal, manualAdditions }: DashboardProps) {
+  const today = new Date();
+
+  // Renew State
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+
+  // Calculate stats
+  const { grossValue, totalPaidToServers, netValue, serverStats, expiringCustomers } = useMemo(() => {
+    // 1. Total Gross (from all renewals)
+    const totalGross = renewals.reduce((acc, r) => acc + r.amount, 0);
+
+    // 2. Total Server Cost (from all renewals)
+    const totalCost = renewals.reduce((acc, r) => acc + (r.cost || 0), 0);
+
+    // 3. Total Manual Additions
+    const totalManualAdditions = manualAdditions.reduce((acc, a) => acc + a.amount, 0);
+
+    const stats: Record<string, { name: string; active: number; monthlyGross: number; monthlyCost: number; accumulatedTotal: number }> = {};
+    const expiring: Customer[] = [];
+
+    servers.forEach(s => {
+      // Calculate accumulated total for this server (all-time)
+      const serverRenewals = renewals.filter(r => r.serverId === s.id);
+      const accumulatedTotal = serverRenewals.reduce((acc, r) => acc + r.amount, 0);
+
+      // Calculate total gross for this server
+      const serverTotalGross = serverRenewals.reduce((acc, r) => acc + r.amount, 0);
+
+      // Calculate total cost for this server
+      const serverTotalCost = serverRenewals.reduce((acc, r) => acc + (r.cost || 0), 0);
+
+      stats[s.id] = {
+        name: s.name,
+        active: 0,
+        monthlyGross: serverTotalGross,
+        monthlyCost: serverTotalCost,
+        accumulatedTotal
+      };
+    });
+
+    customers.forEach(c => {
+      try {
+        const dueDate = parseISO(c.dueDate);
+        if (isNaN(dueDate.getTime())) return;
+
+        const isActive = isAfter(dueDate, today) || differenceInDays(dueDate, today) === 0;
+
+        if (isActive) {
+          if (stats[c.serverId]) {
+            stats[c.serverId].active += 1;
+          }
+        }
+
+        // Expiring in next 7 days or expired in last 7 days
+        const daysUntilDue = differenceInDays(dueDate, today);
+        if (daysUntilDue >= -7 && daysUntilDue <= 7) {
+          expiring.push(c);
+        }
+      } catch (e) {
+        console.error('Erro ao processar cliente no dashboard:', c.name, e);
+      }
+    });
+
+    // Sort expiring by closest
+    expiring.sort((a, b) => parseISO(a.dueDate).getTime() - parseISO(b.dueDate).getTime());
+
+    return {
+      grossValue: totalGross,
+      totalPaidToServers: totalCost,
+      netValue: (totalGross - totalCost) + totalManualAdditions,
+      serverStats: Object.values(stats),
+      expiringCustomers: expiring
+    };
+  }, [customers, servers, renewals, manualAdditions, today]);
+
+  const openRenewModal = (customer: Customer) => {
+    setSelectedCustomer(customer);
+  };
+
+  const confirmRenew = (renewData: { serverId: string; planId: string; amountPaid: string }) => {
+    if (selectedCustomer) {
+      const plan = plans.find(p => p.id === renewData.planId);
+      if (plan) {
+        const currentDueDate = parseISO(selectedCustomer.dueDate);
+        const isActive = isAfter(currentDueDate, today) || differenceInDays(currentDueDate, today) === 0;
+
+        // If active, add to current due date. If expired, add to today.
+        const baseDate = isActive ? currentDueDate : today;
+        const newDueDate = format(addMonths(baseDate, plan.months), 'yyyy-MM-dd');
+
+        updateCustomer(selectedCustomer.id, {
+          serverId: renewData.serverId,
+          planId: renewData.planId,
+          amountPaid: parseFloat(renewData.amountPaid.replace(',', '.')),
+          dueDate: newDueDate
+        });
+
+        const server = servers.find(s => s.id === renewData.serverId);
+        const cost = (server?.costPerActive || 0) * (plan?.months || 1);
+
+        addRenewal({
+          customerId: selectedCustomer.id,
+          serverId: renewData.serverId,
+          planId: renewData.planId,
+          amount: parseFloat(renewData.amountPaid.replace(',', '.')),
+          cost: cost,
+          date: new Date().toISOString()
+        });
+      }
+      setSelectedCustomer(null);
+    }
+  };
+
+  const pendingNotifications = useMemo(() => {
+    return expiringCustomers.filter(c => {
+      const days = differenceInDays(parseISO(c.dueDate), today);
+      return days === 7 && c.lastNotifiedDate !== format(today, 'yyyy-MM-dd');
+    });
+  }, [expiringCustomers, today]);
+
+  return (
+    <div className="space-y-6 pb-24">
+      {/* Pending Notifications Banner */}
+      {pendingNotifications.length > 0 && (
+        <div className="bg-[#c8a646] p-4 rounded-2xl flex items-center justify-between shadow-lg animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className="flex items-center space-x-3">
+            <div className="bg-[#0f0f0f] p-2 rounded-full">
+              <MessageCircle size={20} className="text-[#c8a646]" />
+            </div>
+            <div>
+              <div className="text-[#0f0f0f] font-bold text-sm">Notificações Pendentes</div>
+              <div className="text-[#0f0f0f]/70 text-xs font-medium">{pendingNotifications.length} avisos pendentes para hoje</div>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              const first = pendingNotifications[0];
+              const message = formatWhatsappMessage(whatsappMessage, {
+                name: first.name,
+                amount: first.amountPaid,
+                dueDate: first.dueDate
+              });
+
+              updateCustomer(first.id, { lastNotifiedDate: format(today, 'yyyy-MM-dd') });
+              window.open(`https://wa.me/${first.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
+            }}
+            className="bg-[#0f0f0f] text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-black/80 transition-colors"
+          >
+            Notificar Agora
+          </button>
+        </div>
+      )}
+
+      {/* Main Cards */}
+      <div className="bg-gradient-to-br from-[#c8a646]/20 to-[#1a1a1a] p-6 rounded-3xl border border-[#c8a646]/30 shadow-xl relative overflow-hidden mb-4">
+        <div className="absolute top-0 right-0 p-4 opacity-20">
+          <DollarSign size={64} className="text-[#c8a646]" />
+        </div>
+        <div className="relative z-10">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-[#c8a646] mb-1">Líquido Total</div>
+          <div className="text-4xl font-black text-white">{formatCurrency(netValue)}</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="bg-[#1a1a1a] p-4 rounded-2xl border border-white/5 shadow-lg">
+          <div className="flex items-center space-x-2 text-gray-400 mb-2">
+            <TrendingUp size={16} />
+            <span className="text-[10px] font-bold uppercase tracking-wider">Bruto Total</span>
+          </div>
+          <div className="text-xl font-bold text-white">{formatCurrency(grossValue)}</div>
+        </div>
+
+        <div className="bg-[#1a1a1a] p-4 rounded-2xl border border-white/5 shadow-lg">
+          <div className="flex items-center space-x-2 text-gray-400 mb-2">
+            <TrendingDown size={16} />
+            <span className="text-[10px] font-bold uppercase tracking-wider">Custo Servidor Total</span>
+          </div>
+          <div className="text-xl font-bold text-red-400">{formatCurrency(totalPaidToServers)}</div>
+        </div>
+      </div>
+
+      {/* Server List */}
+      {serverStats.length > 0 && (
+        <div className="bg-[#1a1a1a] rounded-2xl border border-white/5 overflow-hidden shadow-lg">
+          <div className="p-4 border-b border-white/5">
+            <h3 className="text-sm font-medium uppercase tracking-wider text-gray-400">Resumo por Servidor</h3>
+          </div>
+          <div className="divide-y divide-white/5">
+            {serverStats.map((stat, idx) => (
+              <div key={idx} className="p-4">
+                <div className="flex justify-between items-center mb-3">
+                  <div className="font-bold text-white">{stat.name}</div>
+                  <div className="text-xs text-gray-400 bg-white/5 px-2 py-1 rounded-md">{stat.active} ativos</div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-[#0f0f0f] p-3 rounded-xl border border-white/5">
+                    <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Custo Servidor</div>
+                    <div className="text-sm font-bold text-red-400">{formatCurrency(stat.monthlyCost)}</div>
+                  </div>
+                  <div className="bg-[#0f0f0f] p-3 rounded-xl border border-[#c8a646]/20">
+                    <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Bruto Total</div>
+                    <div className="text-sm font-bold text-white">{formatCurrency(stat.monthlyGross)}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Expiring Customers */}
+      {expiringCustomers.length > 0 && (
+        <div className="bg-[#1a1a1a] rounded-2xl border border-white/5 overflow-hidden shadow-lg">
+          <div className="p-4 border-b border-white/5 flex items-center space-x-2">
+            <AlertCircle size={18} className="text-yellow-500" />
+            <h3 className="text-sm font-medium uppercase tracking-wider text-white">Clientes vencendo</h3>
+          </div>
+          <div className="divide-y divide-white/5">
+            {expiringCustomers.map(c => {
+              const server = servers.find(s => s.id === c.serverId);
+              const days = differenceInDays(parseISO(c.dueDate), today);
+              const alreadyNotified = c.lastNotifiedDate === format(today, 'yyyy-MM-dd');
+
+              return (
+                <div key={c.id} className="p-4 flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-white">{c.name}</div>
+                    <div className="text-xs text-gray-400">
+                      {server?.name} • {days === 0 ? 'Vence hoje' : days < 0 ? `Vencido há ${Math.abs(days)} dias` : `Vence em ${days} dias`}
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => {
+                        const message = formatWhatsappMessage(whatsappMessage, {
+                          name: c.name,
+                          amount: c.amountPaid,
+                          dueDate: c.dueDate
+                        });
+                        updateCustomer(c.id, { lastNotifiedDate: format(today, 'yyyy-MM-dd') });
+                        window.open(`https://wa.me/${c.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
+                      }}
+                      className={`p-2 rounded-full transition-colors ${alreadyNotified ? 'bg-gray-500/20 text-gray-500' : 'bg-green-600/20 text-green-500 hover:bg-green-600/30'}`}
+                      title="WhatsApp"
+                    >
+                      <MessageCircle size={20} />
+                    </button>
+                    <button
+                      onClick={() => openRenewModal(c)}
+                      className="p-2 bg-white/5 text-gray-400 rounded-full hover:text-[#c8a646] transition-colors"
+                      title="Renovar"
+                    >
+                      <RefreshCw size={20} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Renew Modal */}
+      <RenewModal
+        isOpen={!!selectedCustomer}
+        onClose={() => setSelectedCustomer(null)}
+        customer={selectedCustomer}
+        servers={servers}
+        plans={plans}
+        onConfirm={confirmRenew}
+      />
+    </div>
+  );
+}
