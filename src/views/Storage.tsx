@@ -142,7 +142,28 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
   };
 
   const confirmImport = () => {
+    // 1. Update Customers
     bulkUpdateCustomers(prev => [...prev, ...importPreview]);
+
+    // 2. Generate Renewals for each customer to update dashboard
+    const newRenewals: Renewal[] = importPreview.map(c => {
+      const server = servers.find(s => s.id === c.serverId);
+      const plan = plans.find(p => p.id === c.planId);
+      const cost = (server?.costPerActive || 0) * (plan?.months || 1);
+
+      return {
+        id: uuidv4(),
+        customerId: c.id,
+        serverId: c.serverId,
+        planId: c.planId,
+        amount: c.amountPaid,
+        cost: cost,
+        date: new Date().toISOString()
+      };
+    });
+
+    setRenewals([...renewals, ...newRenewals]);
+
     setIsImportModalOpen(false);
     setImportPreview([]);
     alert(`${importPreview.length} clientes importados com sucesso!`);
