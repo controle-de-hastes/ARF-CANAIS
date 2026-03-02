@@ -3,7 +3,7 @@ import { Database, Download, Upload, Trash2, HardDrive, Calendar as CalendarIcon
 import { Customer, Server, Plan, Renewal, ManualAddition } from '../types';
 import { format, parseISO, isWithinInterval, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale'; // Added for locale support in date formatting
-import { formatCurrency } from '../utils';
+import { formatCurrency, parseCurrency, parseExcelDate } from '../utils';
 import { Modal } from '../components/Modal';
 import * as XLSX from 'xlsx';
 import { v4 as uuidv4 } from 'uuid';
@@ -68,36 +68,44 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
     reader.onload = (evt) => {
       try {
         const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
         const data = XLSX.utils.sheet_to_json(ws) as any[];
 
         const newCustomers: Customer[] = data.map((row: any) => {
-          const serverName = row['Servidor']?.toString().trim();
-          const planName = row['Plano']?.toString().trim();
-
-          const server = servers.find(s => s.name.toLowerCase() === serverName?.toLowerCase());
-          const plan = plans.find(p => p.name.toLowerCase() === planName?.toLowerCase());
-
-          let dueDate = new Date().toISOString();
-          const rawDate = row['Vencimento (DD/MM/AAAA)']?.toString();
-          if (rawDate && rawDate.includes('/')) {
-            const [day, month, year] = rawDate.split('/');
-            const d = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-            if (!isNaN(d.getTime())) {
-              dueDate = d.toISOString();
+          // Normalize column names to be more forgiving
+          const getVal = (possibleNames: string[]) => {
+            const keys = Object.keys(row);
+            for (const name of possibleNames) {
+              const found = keys.find(k => k.toLowerCase().trim() === name.toLowerCase());
+              if (found) return row[found];
             }
-          }
+            return undefined;
+          };
+
+          const serverName = getVal(['Servidor', 'Server', 'Servidores'])?.toString().trim();
+          const planName = getVal(['Plano', 'Plan', 'Planos'])?.toString().trim();
+          const rawAmount = getVal(['Valor Pago', 'Valor', 'Amount', 'Preço', 'Mensalidade']);
+          const rawDate = getVal(['Vencimento (DD/MM/AAAA)', 'Vencimento', 'Due Date', 'Data', 'Vence']);
+
+          const server = servers.find(s => s.name.toLowerCase().trim() === serverName?.toLowerCase()) ||
+            servers.find(s => s.name.toLowerCase().includes(serverName?.toLowerCase() || ''));
+
+          const plan = plans.find(p => p.name.toLowerCase().trim() === planName?.toLowerCase()) ||
+            plans.find(p => p.name.toLowerCase().includes(planName?.toLowerCase() || ''));
+
+          const amountPaid = parseCurrency(rawAmount) || (plan?.defaultPrice || 0);
+          const dueDate = parseExcelDate(rawDate);
 
           return {
             id: uuidv4(),
-            name: row['Nome']?.toString() || 'Sem Nome',
-            phone: row['Telefone']?.toString() || '',
+            name: getVal(['Nome', 'Name', 'Cliente', 'Usuário'])?.toString() || 'Sem Nome',
+            phone: getVal(['Telefone', 'Phone', 'WhatsApp', 'Celular'])?.toString() || '',
             serverId: server?.id || (servers[0]?.id || ''),
             planId: plan?.id || (plans[0]?.id || ''),
-            amountPaid: parseFloat(row['Valor Pago']) || (plan?.defaultPrice || 0),
-            dueDate: dueDate
+            amountPaid,
+            dueDate
           };
         });
 
