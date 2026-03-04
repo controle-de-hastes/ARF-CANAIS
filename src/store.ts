@@ -45,20 +45,23 @@ export function useStore(user: User | null) {
   const [customers, setCustomers] = useState<Customer[]>(() => {
     const saved = localStorage.getItem('arf_customers');
     const parsed = saved ? JSON.parse(saved) : [];
-    // Migrate old numeric plan IDs in customers
-    return parsed.map((c: Customer) => ({
+    // Migrate old numeric plan IDs and ensure property names (serverId, planId)
+    return parsed.map((c: any) => ({
       ...c,
-      planId: PLAN_ID_MAP[c.planId] || c.planId
+      serverId: c.serverId || c.server_id,
+      planId: PLAN_ID_MAP[c.planId] || c.planId || c.plan_id
     }));
   });
 
   const [renewals, setRenewals] = useState<Renewal[]>(() => {
     const saved = localStorage.getItem('arf_renewals');
     const parsed = saved ? JSON.parse(saved) : [];
-    // Migrate old numeric plan IDs in renewals and ensure numeric amounts
+    // Migrate old IDs, property names (customerId, serverId, planId) and ensure numeric amounts
     return parsed.map((r: any) => ({
       ...r,
-      planId: PLAN_ID_MAP[r.planId] || r.planId,
+      customerId: r.customerId || r.customer_id,
+      serverId: r.serverId || r.server_id,
+      planId: PLAN_ID_MAP[r.planId] || r.planId || r.plan_id,
       amount: Number(r.amount || 0),
       cost: Number(r.cost || 0)
     }));

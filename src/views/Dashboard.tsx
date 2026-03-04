@@ -35,11 +35,11 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
 
     // 2. Monthly Stats (Current Month)
     const currentMonthStr = format(today, 'yyyy-MM');
-    const currentMonthRenewals = renewals.filter(r => r.date.startsWith(currentMonthStr));
+    const currentMonthRenewals = renewals.filter(r => r.date && r.date.startsWith(currentMonthStr));
     const mGross = currentMonthRenewals.reduce((acc, r) => acc + Number(r.amount || 0), 0);
     const mCost = currentMonthRenewals.reduce((acc, r) => acc + Number(r.cost || 0), 0);
 
-    const currentMonthAdditions = manualAdditions.filter(a => a.date.startsWith(currentMonthStr));
+    const currentMonthAdditions = manualAdditions.filter(a => a.date && a.date.startsWith(currentMonthStr));
     const mAdditions = currentMonthAdditions.reduce((acc, a) => acc + Number(a.amount || 0), 0);
 
     const stats: Record<string, { name: string; active: number; monthlyGross: number; monthlyCost: number; accumulatedTotal: number }> = {};
@@ -49,7 +49,7 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
       const serverRenewals = renewals.filter(r => r.serverId === s.id);
       const accumulatedTotal = serverRenewals.reduce((acc, r) => acc + Number(r.amount || 0), 0);
 
-      const serverMonthRenewals = serverRenewals.filter(r => r.date.startsWith(currentMonthStr));
+      const serverMonthRenewals = serverRenewals.filter(r => r.date && r.date.startsWith(currentMonthStr));
       const serverMonthlyGross = serverMonthRenewals.reduce((acc, r) => acc + Number(r.amount || 0), 0);
       const serverMonthlyCost = serverMonthRenewals.reduce((acc, r) => acc + Number(r.cost || 0), 0);
 
