@@ -30,8 +30,14 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
     const isCurrentMonth = (dateStr: any) => {
       try {
         if (!dateStr) return false;
-        // Replace - with / to force local time parsing for date-only strings
-        const d = new Date(dateStr.toString().replace(/-/g, '/'));
+        const str = dateStr.toString();
+        let d;
+        if (str.length <= 10 && str.includes('-') && !str.includes('T')) {
+          d = new Date(str.replace(/-/g, '/'));
+        } else {
+          d = new Date(str);
+        }
+
         if (isNaN(d.getTime())) return false;
 
         const dMonth = d.getMonth();

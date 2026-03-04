@@ -6,18 +6,40 @@ export const formatCurrency = (val: number) =>
 export const parseSafeNumber = (val: any): number => {
   if (typeof val === 'number') return isNaN(val) ? 0 : val;
   if (!val) return 0;
-  // Replace comma with dot and remove anything that isn't a digit, dot, or minus sign
-  const str = val.toString().replace(',', '.').replace(/[^\d.-]/g, '');
+
+  let str = val.toString().trim();
+
+  // If it has both . and , it's definitely formatted (e.g. 1.200,00)
+  if (str.includes('.') && str.includes(',')) {
+    // Remove dots (thousands) and replace comma with dot (decimal)
+    str = str.replace(/\./g, '').replace(',', '.');
+  } else if (str.includes(',')) {
+    // Only comma (e.g. 20,00 or 1.200) -> assume it's a decimal separator for Brazil
+    str = str.replace(',', '.');
+  }
+
+  // Remove everything except numbers, dot, and minus
+  str = str.replace(/[^\d.-]/g, '');
   const parsed = parseFloat(str);
   return isNaN(parsed) ? 0 : parsed;
+};
+
+const parseRobustLocalTime = (dateStr: string) => {
+  if (!dateStr) return new Date(NaN);
+  const str = dateStr.toString();
+  // Only use slash replacement for YYYY-MM-DD format (no 'T') to avoid corrupting ISO strings
+  if (str.length <= 10 && str.includes('-') && !str.includes('T')) {
+    return new Date(str.replace(/-/g, '/'));
+  }
+  return new Date(str);
 };
 
 export const isCustomerActive = (dueDateStr: string) => {
   try {
     if (!dueDateStr) return false;
-    // Replace - with / to force local time parsing for date-only strings
-    const dueDate = new Date(dueDateStr.replace(/-/g, '/'));
+    const dueDate = parseRobustLocalTime(dueDateStr);
     if (isNaN(dueDate.getTime())) return false;
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const checkDate = new Date(dueDate);

@@ -270,8 +270,14 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
       const dateStr = r.date || (r as any).date || (r as any).created_at;
       if (!dateStr) return false;
       try {
-        // Replace - with / to force local time parsing for date-only strings
-        const rDate = new Date(dateStr.toString().replace(/-/g, '/'));
+        const str = dateStr.toString();
+        let rDate;
+        if (str.length <= 10 && str.includes('-') && !str.includes('T')) {
+          rDate = new Date(str.replace(/-/g, '/'));
+        } else {
+          rDate = new Date(str);
+        }
+
         if (isNaN(rDate.getTime())) return false;
         return isWithinInterval(rDate, { start, end });
       } catch {
@@ -282,7 +288,13 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
     const monthAdditions = manualAdditions.filter(a => {
       const dateStr = a.date || (a as any).date || (a as any).created_at;
       if (!dateStr) return false;
-      const aDate = new Date(dateStr.toString().replace(/-/g, '/'));
+      const str = dateStr.toString();
+      let aDate;
+      if (str.length <= 10 && str.includes('-') && !str.includes('T')) {
+        aDate = new Date(str.replace(/-/g, '/'));
+      } else {
+        aDate = new Date(str);
+      }
       return isWithinInterval(aDate, { start, end });
     });
 
