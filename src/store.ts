@@ -55,10 +55,12 @@ export function useStore(user: User | null) {
   const [renewals, setRenewals] = useState<Renewal[]>(() => {
     const saved = localStorage.getItem('arf_renewals');
     const parsed = saved ? JSON.parse(saved) : [];
-    // Migrate old numeric plan IDs in renewals
-    return parsed.map((r: Renewal) => ({
+    // Migrate old numeric plan IDs in renewals and ensure numeric amounts
+    return parsed.map((r: any) => ({
       ...r,
-      planId: PLAN_ID_MAP[r.planId] || r.planId
+      planId: PLAN_ID_MAP[r.planId] || r.planId,
+      amount: Number(r.amount || 0),
+      cost: Number(r.cost || 0)
     }));
   });
 

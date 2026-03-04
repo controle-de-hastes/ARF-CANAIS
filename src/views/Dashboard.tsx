@@ -24,35 +24,38 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
   // Calculate stats
-  const { grossValue, totalPaidToServers, netValue, serverStats, expiringCustomers } = useMemo(() => {
-    // 1. Total Gross (from all renewals)
-    const totalGross = renewals.reduce((acc, r) => acc + r.amount, 0);
+  const { grossValue, totalPaidToServers, netValue, serverStats, expiringCustomers, monthlyGross, monthlyNet, monthlyCost } = useMemo(() => {
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
-    // 2. Total Server Cost (from all renewals)
-    const totalCost = renewals.reduce((acc, r) => acc + (r.cost || 0), 0);
+    // 1. Totals (All-time)
+    const totalGross = renewals.reduce((acc, r) => acc + Number(r.amount || 0), 0);
+    const totalCost = renewals.reduce((acc, r) => acc + Number(r.cost || 0), 0);
+    const totalManualAdditions = manualAdditions.reduce((acc, a) => acc + Number(a.amount || 0), 0);
 
-    // 3. Total Manual Additions
-    const totalManualAdditions = manualAdditions.reduce((acc, a) => acc + a.amount, 0);
+    // 2. Monthly Stats (Current Month)
+    const currentMonthRenewals = renewals.filter(r => isAfter(parseISO(r.date), startOfMonth) || r.date.startsWith(format(today, 'yyyy-MM')));
+    const mGross = currentMonthRenewals.reduce((acc, r) => acc + Number(r.amount || 0), 0);
+    const mCost = currentMonthRenewals.reduce((acc, r) => acc + Number(r.cost || 0), 0);
+
+    const currentMonthAdditions = manualAdditions.filter(a => isAfter(parseISO(a.date), startOfMonth) || a.date.startsWith(format(today, 'yyyy-MM')));
+    const mAdditions = currentMonthAdditions.reduce((acc, a) => acc + Number(a.amount || 0), 0);
 
     const stats: Record<string, { name: string; active: number; monthlyGross: number; monthlyCost: number; accumulatedTotal: number }> = {};
     const expiring: Customer[] = [];
 
     servers.forEach(s => {
-      // Calculate accumulated total for this server (all-time)
       const serverRenewals = renewals.filter(r => r.serverId === s.id);
-      const accumulatedTotal = serverRenewals.reduce((acc, r) => acc + r.amount, 0);
+      const accumulatedTotal = serverRenewals.reduce((acc, r) => acc + Number(r.amount || 0), 0);
 
-      // Calculate total gross for this server
-      const serverTotalGross = serverRenewals.reduce((acc, r) => acc + r.amount, 0);
-
-      // Calculate total cost for this server
-      const serverTotalCost = serverRenewals.reduce((acc, r) => acc + (r.cost || 0), 0);
+      const serverMonthRenewals = serverRenewals.filter(r => isAfter(parseISO(r.date), startOfMonth) || r.date.startsWith(format(today, 'yyyy-MM')));
+      const serverMonthlyGross = serverMonthRenewals.reduce((acc, r) => acc + Number(r.amount || 0), 0);
+      const serverMonthlyCost = serverMonthRenewals.reduce((acc, r) => acc + Number(r.cost || 0), 0);
 
       stats[s.id] = {
         name: s.name,
         active: 0,
-        monthlyGross: serverTotalGross,
-        monthlyCost: serverTotalCost,
+        monthlyGross: serverMonthlyGross,
+        monthlyCost: serverMonthlyCost,
         accumulatedTotal
       };
     });
@@ -70,7 +73,6 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
           }
         }
 
-        // Expiring in next 7 days or expired in last 7 days
         const daysUntilDue = differenceInDays(dueDate, today);
         if (daysUntilDue >= -7 && daysUntilDue <= 7) {
           expiring.push(c);
@@ -80,17 +82,19 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
       }
     });
 
-    // Sort expiring by closest
     expiring.sort((a, b) => parseISO(a.dueDate).getTime() - parseISO(b.dueDate).getTime());
 
     return {
       grossValue: totalGross,
       totalPaidToServers: totalCost,
       netValue: (totalGross - totalCost) + totalManualAdditions,
+      monthlyGross: mGross,
+      monthlyCost: mCost,
+      monthlyNet: (mGross - mCost) + mAdditions,
       serverStats: Object.values(stats),
       expiringCustomers: expiring
     };
-  }, [customers, servers, renewals, manualAdditions, today]);
+  }, [customers, servers, renewals, manualAdditions, today.getFullYear(), today.getMonth(), today.getDate()]);
 
   const openRenewModal = (customer: Customer) => {
     setSelectedCustomer(customer);
@@ -184,8 +188,9 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
           <DollarSign size={64} className="text-[#c8a646]" />
         </div>
         <div className="relative z-10">
-          <div className="text-[10px] font-bold uppercase tracking-widest text-[#c8a646] mb-1">Líquido Total</div>
-          <div className="text-4xl font-black text-white">{formatCurrency(netValue)}</div>
+          <div className="text-[10px] font-bold uppercase tracking-widest text-[#c8a646] mb-1">Lucro Mensal ({format(today, 'MMMM', { locale: (await import('date-fns/locale/pt-BR')).default })})</div>
+          <div className="text-4xl font-black text-white">{formatCurrency(monthlyNet)}</div>
+          <div className="mt-2 text-[10px] text-gray-500 font-medium">Líquido Total: {formatCurrency(netValue)}</div>
         </div>
       </div>
 
@@ -193,17 +198,19 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
         <div className="bg-[#1a1a1a] p-4 rounded-2xl border border-white/5 shadow-lg">
           <div className="flex items-center space-x-2 text-gray-400 mb-2">
             <TrendingUp size={16} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">Bruto Total</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Bruto Mensal</span>
           </div>
-          <div className="text-xl font-bold text-white">{formatCurrency(grossValue)}</div>
+          <div className="text-xl font-bold text-white">{formatCurrency(monthlyGross)}</div>
+          <div className="mt-1 text-[8px] text-gray-600 uppercase">Acumulado: {formatCurrency(grossValue)}</div>
         </div>
 
         <div className="bg-[#1a1a1a] p-4 rounded-2xl border border-white/5 shadow-lg">
           <div className="flex items-center space-x-2 text-gray-400 mb-2">
             <TrendingDown size={16} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">Custo Servidor Total</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Custo Mensal</span>
           </div>
-          <div className="text-xl font-bold text-red-400">{formatCurrency(totalPaidToServers)}</div>
+          <div className="text-xl font-bold text-red-400">{formatCurrency(monthlyCost)}</div>
+          <div className="mt-1 text-[8px] text-gray-600 uppercase">Acumulado: {formatCurrency(totalPaidToServers)}</div>
         </div>
       </div>
 
@@ -222,11 +229,11 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-[#0f0f0f] p-3 rounded-xl border border-white/5">
-                    <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Custo Servidor</div>
+                    <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Custo Mensal</div>
                     <div className="text-sm font-bold text-red-400">{formatCurrency(stat.monthlyCost)}</div>
                   </div>
                   <div className="bg-[#0f0f0f] p-3 rounded-xl border border-[#c8a646]/20">
-                    <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Bruto Total</div>
+                    <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Bruto Mensal</div>
                     <div className="text-sm font-bold text-white">{formatCurrency(stat.monthlyGross)}</div>
                   </div>
                 </div>
