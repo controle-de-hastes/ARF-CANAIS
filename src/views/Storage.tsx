@@ -352,22 +352,8 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
 
     transactions.sort((a, b) => {
       try {
-        const strA = a.date.toString();
-        const strB = b.date.toString();
-
-        let dateA;
-        if (strA.length <= 10 && strA.includes('-') && !strA.includes('T')) {
-          dateA = new Date(strA.replace(/-/g, '/')).getTime();
-        } else {
-          dateA = new Date(strA).getTime();
-        }
-
-        let dateB;
-        if (strB.length <= 10 && strB.includes('-') && !strB.includes('T')) {
-          dateB = new Date(strB.replace(/-/g, '/')).getTime();
-        } else {
-          dateB = new Date(strB).getTime();
-        }
+        const dateA = parseRobustLocalTime(a.date).getTime();
+        const dateB = parseRobustLocalTime(b.date).getTime();
 
         return (dateB || 0) - (dateA || 0);
       } catch {

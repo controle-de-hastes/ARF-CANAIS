@@ -39,7 +39,18 @@ export const parseSafeNumber = (val: any): number => {
 
 export const parseRobustLocalTime = (dateStr: string) => {
   if (!dateStr) return new Date(NaN);
-  const str = dateStr.toString();
+  let str = dateStr.toString().trim();
+
+  // Handle Brazilian DD/MM/YYYY format explicitly to avoid American MM/DD/YYYY confusion
+  if (str.includes('/')) {
+    const parts = str.split(' ')[0].split('/');
+    if (parts.length === 3 && parts[0].length <= 2 && parts[2].length === 4) {
+      // Reformat string to YYYY/MM/DD so native Date parses it correctly
+      const timePart = str.includes(' ') ? ` ${str.split(' ').slice(1).join(' ')}` : '';
+      str = `${parts[2]}/${parts[1]}/${parts[0]}${timePart}`;
+    }
+  }
+
   // Handle YYYY-MM-DD format (10 chars, has hyphens, no 'T')
   if (str.length === 10 && str.includes('-') && !str.includes('T')) {
     // Replace - with / to force local date interpretation and avoid midnight-UTC-shift-backwards
