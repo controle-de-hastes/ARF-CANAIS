@@ -355,7 +355,13 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
         const dateA = parseRobustLocalTime(a.date).getTime();
         const dateB = parseRobustLocalTime(b.date).getTime();
 
-        return (dateB || 0) - (dateA || 0);
+        const diff = (dateB || 0) - (dateA || 0);
+        if (diff === 0) {
+          // If timestamps are exactly equal (like midnight), break tie by ID 
+          // to ensure deterministic rendering and prevent UI freezing old items on top.
+          return b.id.localeCompare(a.id);
+        }
+        return diff;
       } catch {
         return 0;
       }
