@@ -336,29 +336,51 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
     });
 
     monthAdditions.forEach(a => {
-      if (a.amount > 0) {
+      const amount = parseSafeNumber(a.amount || (a as any).amount);
+      const aDate = a.date || (a as any).date || (a as any).created_at || new Date().toISOString();
+
+      if (amount > 0) {
         transactions.push({
-          id: `add-${a.id}`,
-          date: a.date,
+          id: `add-${a.id || Math.random()}`,
+          date: aDate,
           description: a.description || 'Adição manual',
-          amount: a.amount,
+          amount: amount,
           type: 'profit'
         });
-      } else if (a.amount < 0) {
+      } else if (amount < 0) {
         transactions.push({
-          id: `add-${a.id}`,
-          date: a.date,
+          id: `add-${a.id || Math.random()}`,
+          date: aDate,
           description: a.description || 'Remoção manual',
-          amount: Math.abs(a.amount),
+          amount: Math.abs(amount),
           type: 'expense'
         });
       }
     });
 
     transactions.sort((a, b) => {
-      const dateA = new Date(a.date).getTime();
-      const dateB = new Date(b.date).getTime();
-      return (dateB || 0) - (dateA || 0);
+      try {
+        const strA = a.date.toString();
+        const strB = b.date.toString();
+
+        let dateA;
+        if (strA.length <= 10 && strA.includes('-') && !strA.includes('T')) {
+          dateA = new Date(strA.replace(/-/g, '/')).getTime();
+        } else {
+          dateA = new Date(strA).getTime();
+        }
+
+        let dateB;
+        if (strB.length <= 10 && strB.includes('-') && !strB.includes('T')) {
+          dateB = new Date(strB.replace(/-/g, '/')).getTime();
+        } else {
+          dateB = new Date(strB).getTime();
+        }
+
+        return (dateB || 0) - (dateA || 0);
+      } catch {
+        return 0;
+      }
     });
 
     return {
