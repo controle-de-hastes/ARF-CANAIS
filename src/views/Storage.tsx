@@ -21,9 +21,10 @@ interface StorageProps {
   setManualAdditions: (additions: ManualAddition[]) => void;
   appIcon: string | null;
   setAppIcon: (icon: string | null) => void;
+  syncToCloud: () => Promise<void>;
 }
 
-export function Storage({ customers, servers, plans, renewals, manualAdditions, bulkUpdateCustomers, setServers, setPlans, setRenewals, setManualAdditions, appIcon, setAppIcon }: StorageProps) {
+export function Storage({ customers, servers, plans, renewals, manualAdditions, bulkUpdateCustomers, setServers, setPlans, setRenewals, setManualAdditions, appIcon, setAppIcon, syncToCloud }: StorageProps) {
   const [storageSize, setStorageSize] = useState<string>('0 KB');
   const [isFullHistoryOpen, setIsFullHistoryOpen] = useState(false);
   const [importPreview, setImportPreview] = useState<Customer[]>([]);
@@ -481,6 +482,19 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
 
         <div className="space-y-3">
           <button
+            onClick={syncToCloud}
+            className="w-full flex items-center justify-between p-4 bg-[#c8a646] text-[#0f0f0f] rounded-2xl hover:bg-[#e8c666] transition-all shadow-xl shadow-[#c8a646]/20 font-bold group"
+          >
+            <div className="flex items-center space-x-3">
+              <Upload size={20} />
+              <div className="text-left">
+                <div className="text-sm">Sincronizar com a Nuvem</div>
+                <div className="text-[10px] opacity-70 uppercase tracking-wider">Enviar dados locais para o Supabase</div>
+              </div>
+            </div>
+          </button>
+
+          <button
             onClick={handleExportAll}
             className="w-full flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 transition-colors group"
           >
@@ -689,9 +703,10 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
             <span className="text-gray-500">Adições Manuais</span>
             <span className="text-white font-mono">{manualAdditions.length}</span>
           </div>
-          <div className="pt-4 border-t border-white/5 text-[10px] text-gray-600 leading-relaxed">
-            Os dados são armazenados localmente no seu navegador (LocalStorage).
-            Recomendamos exportar um backup regularmente para evitar perda de dados se o cache do navegador for limpo.
+          <div class="pt-4 border-t border-white/5 text-[10px] text-gray-600 leading-relaxed">
+            Seus dados estão sendo sincronizados com a nuvem (Supabase).
+            Isso permite que você acesse suas informações de qualquer dispositivo.
+            O botão "Sincronizar com a Nuvem" acima garante que seus dados locais atuais sejam carregados para o servidor.
           </div>
         </div>
       </div>

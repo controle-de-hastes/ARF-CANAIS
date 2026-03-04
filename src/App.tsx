@@ -21,7 +21,7 @@ import { User } from '@supabase/supabase-js';
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [user, setUser] = useState<User | null>(null);
-  const store = useStore();
+  const store = useStore(user);
 
   useEffect(() => {
     // Check initial session
@@ -120,6 +120,7 @@ export default function App() {
             setManualAdditions={store.bulkUpdateManualAdditions}
             appIcon={store.appIcon}
             setAppIcon={store.setAppIcon}
+            syncToCloud={store.syncToCloud}
           />
         );
       default:
@@ -129,6 +130,17 @@ export default function App() {
 
   if (!user) {
     return <Auth />;
+  }
+
+  if (store.loading) {
+    return (
+      <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="w-12 h-12 border-4 border-[#c8a646] border-t-transparent rounded-full animate-spin" />
+          <p className="text-[#c8a646] font-bold uppercase tracking-widest text-xs">Carregando dados...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
