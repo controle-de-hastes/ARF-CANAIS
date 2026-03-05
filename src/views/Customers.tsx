@@ -375,7 +375,12 @@ export function Customers({
                       <button
                         type="button"
                         onClick={(e) => {
-                          if (isOnCooldown) {
+                          // Double triple check
+                          const checkDate = customer.lastOverdueNotifiedDate || (customer as any).last_overdue_notified_date || (customer as any).last_overdue_not_date;
+                          const checkParsed = checkDate ? parseISO(checkDate) : null;
+                          const checkIsOnCooldown = checkParsed && !isNaN(checkParsed.getTime()) && differenceInDays(today, checkParsed) < 10;
+
+                          if (checkIsOnCooldown) {
                             e.preventDefault();
                             e.stopPropagation();
                             return;
@@ -385,9 +390,8 @@ export function Customers({
                           const message = `Olá *${customer.name}*! 👋\n\nPassando para avisar que seu acesso IPTV está vencido há *${overdueDays}* ${overdueDays === 1 ? 'dia' : 'dias'}. ⚠️\n\nGostaria de renovar seu acesso com a gente agora? 😊`;
 
                           updateCustomer(customer.id, {
-                            lastOverdueNotifiedDate: format(today, 'yyyy-MM-dd'),
-                            last_overdue_notified_date: format(today, 'yyyy-MM-dd')
-                          } as any);
+                            lastOverdueNotifiedDate: format(today, 'yyyy-MM-dd')
+                          });
 
                           window.open(`https://wa.me/${customer.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
                         }}
