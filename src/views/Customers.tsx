@@ -330,6 +330,9 @@ export function Customers({
             const daysDiff = differenceInDays(dueDate, today);
             const isActive = isAfter(dueDate, today) || daysDiff === 0;
 
+            const lastOverdueNotified = customer.lastOverdueNotifiedDate ? parseISO(customer.lastOverdueNotifiedDate) : null;
+            const isOnCooldown = lastOverdueNotified && !isNaN(lastOverdueNotified.getTime()) && differenceInDays(today, lastOverdueNotified) < 10;
+
             return (
               <div key={customer.id} className="bg-[#1a1a1a] rounded-2xl border border-white/5 p-4 shadow-lg">
                 <div className="flex justify-between items-start mb-3">
@@ -370,14 +373,7 @@ export function Customers({
                     {!isActive && (
                       <button
                         onClick={() => {
-                          const lastNotified = customer.lastOverdueNotifiedDate ? parseISO(customer.lastOverdueNotifiedDate) : null;
-                          const canSend = !lastNotified || differenceInDays(today, lastNotified) >= 10;
-
-                          if (!canSend) {
-                            const daysRemaining = 10 - differenceInDays(today, lastNotified!);
-                            alert(`Mensagem já enviada. Aguarde mais ${daysRemaining} ${daysRemaining === 1 ? 'dia' : 'dias'} para enviar novamente.`);
-                            return;
-                          }
+                          if (isOnCooldown) return;
 
                           const overdueDays = Math.abs(daysDiff);
                           const message = `Olá *${customer.name}*! 👋\n\nPassando para avisar que seu acesso IPTV está vencido há *${overdueDays}* ${overdueDays === 1 ? 'dia' : 'dias'}. ⚠️\n\nGostaria de renovar seu acesso com a gente agora? 😊`;
@@ -385,14 +381,14 @@ export function Customers({
                           updateCustomer(customer.id, { lastOverdueNotifiedDate: format(today, 'yyyy-MM-dd') });
                           window.open(`https://wa.me/${customer.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
                         }}
-                        disabled={customer.lastOverdueNotifiedDate && differenceInDays(today, parseISO(customer.lastOverdueNotifiedDate)) < 10 ? true : false}
-                        className={`p-2 rounded-full transition-colors ${customer.lastOverdueNotifiedDate && differenceInDays(today, parseISO(customer.lastOverdueNotifiedDate)) < 10
-                          ? 'bg-gray-500/10 text-gray-600 cursor-not-allowed opacity-50'
+                        disabled={!!isOnCooldown}
+                        className={`p-2 rounded-full transition-all duration-300 ${isOnCooldown
+                          ? 'bg-gray-500/10 text-gray-600 cursor-not-allowed opacity-40 pointer-events-none'
                           : 'bg-red-500/20 text-red-500 hover:bg-red-500/30 animate-bounce'
                           }`}
                         title={
-                          customer.lastOverdueNotifiedDate && differenceInDays(today, parseISO(customer.lastOverdueNotifiedDate)) < 10
-                            ? `Próximo envio em ${10 - differenceInDays(today, parseISO(customer.lastOverdueNotifiedDate))} dias`
+                          isOnCooldown
+                            ? `Próximo envio em ${10 - differenceInDays(today, lastOverdueNotified!)} dias`
                             : "Lembrar Vencimento"
                         }
                       >
