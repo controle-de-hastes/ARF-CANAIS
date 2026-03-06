@@ -57,6 +57,62 @@ export default function App() {
     }
   }, [store.appIcon, store.appCover]);
 
+  // Handle Automatic Weekly Backup
+  useEffect(() => {
+    if (!user || store.loading) return; // Wait until data is loaded
+
+    const checkAutoBackup = async () => {
+      const isEnabled = localStorage.getItem('arf_auto_backup_enabled') === 'true';
+      if (!isEnabled) return;
+
+      const lastBackupStr = localStorage.getItem('arf_last_auto_backup');
+      const now = new Date();
+
+      let shouldBackup = false;
+      if (!lastBackupStr) {
+        shouldBackup = true;
+      } else {
+        const lastBackup = new Date(lastBackupStr);
+        const diffTime = Math.abs(now.getTime() - lastBackup.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        if (diffDays >= 7) {
+          shouldBackup = true;
+        }
+      }
+
+      if (shouldBackup) {
+        // Dynamic import to avoid loading file system API stuff if not needed immediately
+        const { performLocalBackup } = await import('./lib/backup');
+
+        const dataToBackup = {
+          customers: store.customers,
+          servers: store.servers,
+          plans: store.plans,
+          renewals: store.renewals,
+          manualAdditions: store.manualAdditions,
+          appIcon: store.appIcon,
+          appCover: store.appCover
+        };
+
+        await performLocalBackup(dataToBackup);
+      }
+    };
+
+    // Run this check once data is loaded (maybe give it a few seconds to avoid slowing down initial render)
+    const timer = setTimeout(checkAutoBackup, 3000);
+    return () => clearTimeout(timer);
+  }, [
+    user,
+    store.loading,
+    store.customers,
+    store.servers,
+    store.plans,
+    store.renewals,
+    store.manualAdditions,
+    store.appIcon,
+    store.appCover
+  ]);
+
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':

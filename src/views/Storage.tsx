@@ -7,6 +7,8 @@ import { formatCurrency, parseCurrency, parseExcelDate, parseSafeNumber, parseRo
 import { Modal } from '../components/Modal';
 import * as XLSX from 'xlsx';
 import { v4 as uuidv4 } from 'uuid';
+import { saveDirectoryHandle, verifyPermission } from '../lib/idb';
+import { performLocalBackup } from '../lib/backup';
 
 interface StorageProps {
   customers: Customer[];
@@ -31,6 +33,10 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
   const [isFullHistoryOpen, setIsFullHistoryOpen] = useState(false);
   const [importPreview, setImportPreview] = useState<Customer[]>([]);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
+  const [autoBackupEnabled, setAutoBackupEnabled] = useState(() => localStorage.getItem('arf_auto_backup_enabled') === 'true');
+  const [autoBackupFolder, setAutoBackupFolder] = useState(() => localStorage.getItem('arf_auto_backup_folder') || '');
+  const [lastAutoBackup, setLastAutoBackup] = useState(() => localStorage.getItem('arf_last_auto_backup') || null);
 
   useEffect(() => {
     const calculateSize = () => {
@@ -274,6 +280,67 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
         setAppCover(reader.result as string);
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handleConfigureAutoBackup = async () => {
+    try {
+      if (!('showDirectoryPicker' in window)) {
+        alert('Seu navegador não suporta a escolha de pastas local (File System Access API). Tente usar as versões mais recentes do Chrome, Edge ou Opera no PC.');
+        return;
+      }
+
+      const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
+      await saveDirectoryHandle(handle);
+
+      const hasPerm = await verifyPermission(handle, true);
+      if (hasPerm) {
+        setAutoBackupEnabled(true);
+        setAutoBackupFolder(handle.name);
+        localStorage.setItem('arf_auto_backup_enabled', 'true');
+        localStorage.setItem('arf_auto_backup_folder', handle.name);
+        alert(`Pasta "${handle.name}" configurada com sucesso para backup automático semanal!`);
+
+        // Optionally run immediately if it never ran
+        if (!lastAutoBackup) {
+          const success = await performLocalBackup({ customers, servers, plans, renewals, manualAdditions, appIcon, appCover });
+          if (success) {
+            setLastAutoBackup(localStorage.getItem('arf_last_auto_backup'));
+          }
+        }
+      } else {
+        alert('Permissão negada. Não é possível configurar o backup.');
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        console.error(err);
+        alert('Erro ao configurar pasta de backup: ' + err.message);
+      }
+    }
+  };
+
+  const toggleAutoBackup = () => {
+    if (autoBackupEnabled) {
+      setAutoBackupEnabled(false);
+      localStorage.setItem('arf_auto_backup_enabled', 'false');
+    } else {
+      if (!autoBackupFolder) {
+        handleConfigureAutoBackup();
+      } else {
+        setAutoBackupEnabled(true);
+        localStorage.setItem('arf_auto_backup_enabled', 'true');
+      }
+    }
+  };
+
+  const forceAutoBackupNow = async () => {
+    if (!autoBackupEnabled) return;
+    const success = await performLocalBackup({ customers, servers, plans, renewals, manualAdditions, appIcon, appCover });
+    if (success) {
+      setLastAutoBackup(localStorage.getItem('arf_last_auto_backup'));
+      alert('Backup gerado com sucesso na pasta configurada!');
+    } else {
+      alert('Falha ao gerar o backup. Verifique se a pasta existe e as permissões estão corretas.');
     }
   };
 
@@ -597,6 +664,52 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
               </div>
             </div>
           </button>
+
+          {/* Auto Backup UI Section inside Storage */}
+          <div className="bg-[#0f0f0f] p-4 rounded-xl border border-white/5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <CalendarIcon size={16} className="text-[#c8a646]" />
+                  Backup Automático Semanal
+                </h3>
+                <p className="text-[10px] text-gray-500 uppercase tracking-wider mt-1">Salva cópias locais toda semana</p>
+              </div>
+              <button
+                onClick={toggleAutoBackup}
+                className={`w-12 h-6 rounded-full p-1 transition-colors ${autoBackupEnabled ? 'bg-green-500' : 'bg-gray-700'}`}
+              >
+                <div className={`w-4 h-4 rounded-full bg-white transition-transform ${autoBackupEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
+              </button>
+            </div>
+
+            {autoBackupEnabled && (
+              <div className="pt-3 border-t border-white/5 space-y-3">
+                <div className="flex justify-between items-center bg-white/5 p-3 rounded-lg border border-white/10">
+                  <div className="truncate pr-4">
+                    <div className="text-xs font-bold text-gray-300">Pasta de Destino:</div>
+                    <div className="text-sm text-white font-mono truncate">{autoBackupFolder || 'Não configurada'}</div>
+                  </div>
+                  <button onClick={handleConfigureAutoBackup} className="text-xs text-[#c8a646] font-bold uppercase hover:underline whitespace-nowrap">
+                    Alterar Pasta
+                  </button>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-gray-500">Último backup:</span>
+                  <span className="text-gray-300 font-bold">
+                    {lastAutoBackup ? format(parseISO(lastAutoBackup), 'dd/MM/yyyy HH:mm') : 'Nunca'}
+                  </span>
+                </div>
+                <button
+                  onClick={forceAutoBackupNow}
+                  className="w-full flex justify-center items-center space-x-2 p-2 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors text-xs text-white font-bold uppercase tracking-wider"
+                >
+                  <HardDrive size={14} />
+                  <span>Gerar Backup Agora</span>
+                </button>
+              </div>
+            )}
+          </div>
 
           <button
             onClick={handleExportAll}
