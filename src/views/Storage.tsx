@@ -286,7 +286,19 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
   const handleConfigureAutoBackup = async () => {
     try {
       if (!('showDirectoryPicker' in window)) {
-        alert('Seu navegador não suporta a escolha de pastas local (File System Access API). Tente usar as versões mais recentes do Chrome, Edge ou Opera no PC.');
+        // Fallback for unsupported browsers: just enable the backup, and folder will be 'Downloads' by default via standard download behavior
+        setAutoBackupEnabled(true);
+        setAutoBackupFolder('Downloads (Navegador)');
+        localStorage.setItem('arf_auto_backup_enabled', 'true');
+        localStorage.setItem('arf_auto_backup_folder', 'Downloads (Navegador)');
+        alert('Backup automático ativado! Como seu navegador não suporta a escolha de pasta, o arquivo será salvo na sua pasta de Downloads padrão semanalmente.');
+
+        if (!lastAutoBackup) {
+          const success = await performLocalBackup({ customers, servers, plans, renewals, manualAdditions, appIcon, appCover });
+          if (success) {
+            setLastAutoBackup(localStorage.getItem('arf_last_auto_backup'));
+          }
+        }
         return;
       }
 
@@ -309,7 +321,7 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
           }
         }
       } else {
-        alert('Permissão negada. Não é possível configurar o backup.');
+        alert('Permissão negada. Não é possível configurar o backup para esta pasta.');
       }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
@@ -690,9 +702,11 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
                     <div className="text-xs font-bold text-gray-300">Pasta de Destino:</div>
                     <div className="text-sm text-white font-mono truncate">{autoBackupFolder || 'Não configurada'}</div>
                   </div>
-                  <button onClick={handleConfigureAutoBackup} className="text-xs text-[#c8a646] font-bold uppercase hover:underline whitespace-nowrap">
-                    Alterar Pasta
-                  </button>
+                  {'showDirectoryPicker' in window && (
+                    <button onClick={handleConfigureAutoBackup} className="text-xs text-[#c8a646] font-bold uppercase hover:underline whitespace-nowrap">
+                      Alterar Pasta
+                    </button>
+                  )}
                 </div>
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-gray-500">Último backup:</span>
