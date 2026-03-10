@@ -78,7 +78,11 @@ export function Servers({ servers, customers, plans, addServer, updateServer, de
               return isAfter(dueDate, today) || differenceInDays(dueDate, today) === 0;
             });
             const totalActive = activeCustomers.length;
-            const totalGenerated = activeCustomers.reduce((acc, c) => acc + c.amountPaid, 0);
+            const totalGenerated = activeCustomers.reduce((acc, c) => {
+              const plan = plans.find(p => p.id === c.planId);
+              const months = plan ? plan.months : 1;
+              return acc + (c.amountPaid / months);
+            }, 0);
 
             // Calculate total cost based on plans
             const totalPaid = activeCustomers.reduce((sum, c) => {
