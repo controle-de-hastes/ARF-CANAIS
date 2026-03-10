@@ -20,6 +20,7 @@ interface DashboardProps {
 
 export function Dashboard({ customers, servers, plans, whatsappMessage, updateCustomer, renewals, addRenewal, manualAdditions, renewalMessage }: DashboardProps) {
   const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
   // Renew State
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
