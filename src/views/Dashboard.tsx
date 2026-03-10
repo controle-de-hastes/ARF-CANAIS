@@ -99,7 +99,7 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
 
         const checkDate = new Date(dueDateStr.toString().replace(/-/g, '/'));
         const daysUntilDue = differenceInDays(checkDate, today);
-        if (daysUntilDue >= -7 && daysUntilDue <= 7) {
+        if (daysUntilDue >= -6 && daysUntilDue <= 6) {
           expiring.push(c);
         }
       } catch (e) {
