@@ -21,6 +21,7 @@ export interface Customer {
   dueDate: string;
   lastNotifiedDate?: string;
   lastOverdueNotifiedDate?: string;
+  hasResetCounters?: boolean;
 }
 
 export interface Renewal {

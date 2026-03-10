@@ -285,6 +285,26 @@ export function useStore(user: User | null) {
     setCustomers(prev => prev.filter(c => c.id !== id));
   };
 
+  const resetServerCounters = async (serverId: string) => {
+    // We update all customers in this server to have amountPaid = 0 and hasResetCounters = true
+    setCustomers(prev => prev.map(c => {
+      if (c.serverId === serverId) {
+        return { ...c, amountPaid: 0, hasResetCounters: true };
+      }
+      return c;
+    }));
+
+    if (user) {
+      const { error } = await supabase.from('customers')
+        .update({ amount_paid: 0, has_reset_counters: true })
+        .eq('server_id', serverId);
+
+      if (error) {
+        console.error('Error resetting server stats in cloud:', error);
+      }
+    }
+  };
+
   const transferCustomer = async (customerId: string, newServerId: string) => {
     // 1. Update Customer
     setCustomers(prev => prev.map(c => c.id === customerId ? { ...c, serverId: newServerId } : c));
@@ -559,7 +579,7 @@ export function useStore(user: User | null) {
     loading,
     servers, addServer, updateServer, deleteServer, bulkUpdateServers,
     plans, updatePlan, bulkUpdatePlans,
-    customers, addCustomer: addCustomer as (c: Customer) => Promise<boolean>, updateCustomer, deleteCustomer, bulkUpdateCustomers, transferCustomer,
+    customers, addCustomer: addCustomer as (c: Customer) => Promise<boolean>, updateCustomer, deleteCustomer, bulkUpdateCustomers, transferCustomer, resetServerCounters,
     renewals, addRenewal, bulkUpdateRenewals,
     manualAdditions, addManualAddition, bulkUpdateManualAdditions,
     whatsappMessage, setWhatsappMessage,

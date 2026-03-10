@@ -98,6 +98,7 @@ export default function App() {
             addServer={store.addServer}
             updateServer={store.updateServer}
             deleteServer={store.deleteServer}
+            resetServerCounters={store.resetServerCounters}
           />
         );
       case 'plans':

@@ -12,9 +12,10 @@ interface ServersProps {
   addServer: (s: Omit<Server, 'id'>) => void;
   updateServer: (id: string, s: Partial<Server>) => void;
   deleteServer: (id: string) => void;
+  resetServerCounters: (id: string) => void;
 }
 
-export function Servers({ servers, customers, plans, addServer, updateServer, deleteServer }: ServersProps) {
+export function Servers({ servers, customers, plans, addServer, updateServer, deleteServer, resetServerCounters }: ServersProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingServer, setEditingServer] = useState<Server | null>(null);
   const [formData, setFormData] = useState({ name: '', costPerActive: '' });
@@ -81,6 +82,7 @@ export function Servers({ servers, customers, plans, addServer, updateServer, de
 
             // Calculate total cost based on plans
             const totalPaid = activeCustomers.reduce((sum, c) => {
+              if (c.hasResetCounters) return sum; // If reset, this customer doesn't cost anything for the current cycle
               const plan = plans.find(p => p.id === c.planId);
               const months = plan ? plan.months : 1;
               return sum + (server.costPerActive * months);
@@ -95,6 +97,16 @@ export function Servers({ servers, customers, plans, addServer, updateServer, de
                     <p className="text-sm text-gray-400 mt-1">Custo por ativo: <span className="text-white">{formatCurrency(server.costPerActive)}</span></p>
                   </div>
                   <div className="flex space-x-2">
+                    <button onClick={() => {
+                      if (window.confirm(`Tem certeza que deseja resetar os contadores de Gerado, Pago e Lucro para o servidor ${server.name}? Isso zerará os valores do ciclo atual para todos os clientes ativos neste servidor.`)) {
+                        resetServerCounters(server.id);
+                      }
+                    }}
+                      className="p-2 text-yellow-400 hover:text-yellow-300 transition-colors bg-yellow-500/10 rounded-full"
+                      title="Resetar Contadores Mensais"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>
+                    </button>
                     <button onClick={() => openModal(server)} className="p-2 text-gray-400 hover:text-white transition-colors bg-white/5 rounded-full">
                       <Edit2 size={16} />
                     </button>
