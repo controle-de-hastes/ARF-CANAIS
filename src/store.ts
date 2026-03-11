@@ -29,62 +29,15 @@ export function useStore(user: User | null) {
     return localStorage.getItem('arf_user_avatar');
   });
 
-  const [servers, setServers] = useState<Server[]>(() => {
-    // ... [rest of states remain same]
-    const saved = localStorage.getItem('arf_servers');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [servers, setServers] = useState<Server[]>([]);
 
-  const [plans, setPlans] = useState<Plan[]>(() => {
-    const saved = localStorage.getItem('arf_plans');
-    let parsed = saved ? JSON.parse(saved) : DEFAULT_PLANS;
-    // Migrate old numeric IDs to UUIDs
-    parsed = parsed.map((p: Plan) => ({
-      ...p,
-      id: PLAN_ID_MAP[p.id] || p.id
-    }));
-    if (!parsed.find((p: Plan) => p.name === 'Gratuito')) {
-      parsed = [{ id: '702330a6-168a-4933-9114-1ce5d2f63f53', name: 'Gratuito', defaultPrice: 0, months: 1 }, ...parsed];
-    }
-    return parsed;
-  });
+  const [plans, setPlans] = useState<Plan[]>(DEFAULT_PLANS);
 
-  const [customers, setCustomers] = useState<Customer[]>(() => {
-    const saved = localStorage.getItem('arf_customers');
-    const parsed = saved ? JSON.parse(saved) : [];
-    // Migrate old numeric plan IDs and ensure property names (serverId, planId)
-    return parsed.map((c: any) => ({
-      ...c,
-      id: (c.id || '').toString(),
-      name: c.name || 'Sem Nome',
-      phone: (c.phone || '').toString(),
-      serverId: (c.serverId || c.server_id || '').toString(),
-      planId: (PLAN_ID_MAP[c.planId] || c.planId || c.plan_id || '').toString(),
-      amountPaid: parseSafeNumber(c.amount_paid ?? c.amountPaid),
-      dueDate: c.dueDate || c.due_date || new Date().toISOString(),
-      lastNotifiedDate: c.lastNotifiedDate || c.last_notified_date,
-      lastOverdueNotifiedDate: c.lastOverdueNotifiedDate || c.last_overdue_notified_date
-    }));
-  });
+  const [customers, setCustomers] = useState<Customer[]>([]);
 
-  const [renewals, setRenewals] = useState<Renewal[]>(() => {
-    const saved = localStorage.getItem('arf_renewals');
-    const parsed = saved ? JSON.parse(saved) : [];
-    // Migrate old IDs, property names (customerId, serverId, planId) and ensure numeric amounts
-    return parsed.map((r: any) => ({
-      ...r,
-      customerId: (r.customerId || r.customer_id || '').toString(),
-      serverId: (r.serverId || r.server_id || '').toString(),
-      planId: (PLAN_ID_MAP[r.planId] || r.planId || r.plan_id || '').toString(),
-      amount: Number(r.amount || 0),
-      cost: Number(r.cost || 0)
-    }));
-  });
+  const [renewals, setRenewals] = useState<Renewal[]>([]);
 
-  const [manualAdditions, setManualAdditions] = useState<ManualAddition[]>(() => {
-    const saved = localStorage.getItem('arf_manual_additions');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [manualAdditions, setManualAdditions] = useState<ManualAddition[]>([]);
 
   const [whatsappMessage, setWhatsappMessage] = useState<string>(() => {
     const saved = localStorage.getItem('arf_message_v2');
@@ -118,6 +71,11 @@ export function useStore(user: User | null) {
       setUserEmail(user.email || null);
 
       try {
+        // Limit history to the last 3 months to avoid slow initial loads
+        const threeMonthsAgo = new Date();
+        threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+        const threeMonthsAgoISO = threeMonthsAgo.toISOString();
+
         const [
           { data: serversData },
           { data: plansData },
@@ -130,8 +88,8 @@ export function useStore(user: User | null) {
           supabase.from('servers').select('*').order('name'),
           supabase.from('plans').select('*').order('months'),
           supabase.from('customers').select('*').order('name'),
-          supabase.from('renewals').select('*').order('date', { ascending: false }),
-          supabase.from('manual_additions').select('*').order('date', { ascending: false }),
+          supabase.from('renewals').select('*').gte('date', threeMonthsAgoISO).order('date', { ascending: false }),
+          supabase.from('manual_additions').select('*').gte('date', threeMonthsAgoISO).order('date', { ascending: false }),
           supabase.from('settings').select('*').single(),
           supabase.from('profiles').select('role, parent_id, avatar_url').eq('id', user.id).maybeSingle()
         ]);
@@ -419,26 +377,7 @@ export function useStore(user: User | null) {
     return () => clearTimeout(timer);
   }, [whatsappMessage, renewalMessage, appIcon, appCover, user, loading]);
 
-  // Local Storage Cache sync
-  useEffect(() => {
-    localStorage.setItem('arf_servers', JSON.stringify(servers));
-  }, [servers]);
 
-  useEffect(() => {
-    localStorage.setItem('arf_plans', JSON.stringify(plans));
-  }, [plans]);
-
-  useEffect(() => {
-    localStorage.setItem('arf_customers', JSON.stringify(customers));
-  }, [customers]);
-
-  useEffect(() => {
-    localStorage.setItem('arf_renewals', JSON.stringify(renewals));
-  }, [renewals]);
-
-  useEffect(() => {
-    localStorage.setItem('arf_manual_additions', JSON.stringify(manualAdditions));
-  }, [manualAdditions]);
 
   useEffect(() => {
     localStorage.setItem('arf_renewal_message', renewalMessage);
