@@ -80,7 +80,7 @@ export function useStore(user: User | null) {
         ] = await Promise.all([
           supabase.from('servers').select('*').order('name'),
           supabase.from('plans').select('*').order('months'),
-          supabase.from('settings').select('*').single(),
+          supabase.from('settings').select('*').eq('user_id', user.id).maybeSingle(),
           supabase.from('profiles').select('role, parent_id, avatar_url').eq('id', user.id).maybeSingle()
         ]);
 

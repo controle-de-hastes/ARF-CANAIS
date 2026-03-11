@@ -57,7 +57,11 @@ export function Customers({
     dueDate: format(addMonths(new Date(), plans.length > 0 ? plans[0].months : 1), 'yyyy-MM-dd')
   });
 
-  const today = new Date();
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
 
   const handleRenew = (renewData: { serverId: string; planId: string; amountPaid: string }) => {
     if (selectedCustomerForRenew) {

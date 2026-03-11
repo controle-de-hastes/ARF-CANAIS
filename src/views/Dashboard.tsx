@@ -21,8 +21,11 @@ interface DashboardProps {
 }
 
 export function Dashboard({ customers, servers, plans, whatsappMessage, updateCustomer, renewals, addRenewal, manualAdditions, renewalMessage, userRole }: DashboardProps) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
 
   // Renew State
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
