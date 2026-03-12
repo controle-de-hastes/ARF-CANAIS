@@ -41,35 +41,40 @@ export const parseRobustLocalTime = (dateStr: string) => {
   if (!dateStr) return new Date(NaN);
   let str = dateStr.toString().trim();
 
-  // Handle Brazilian DD/MM/YYYY format explicitly to avoid American MM/DD/YYYY confusion
+  // Handle YYYY-MM-DD format (10 chars, has hyphens, no 'T') - Extremely common in this app
+  if (str.length === 10 && str[4] === '-' && str[7] === '-') {
+    // Replace - with / to force local date interpretation and avoid midnight-UTC-shift-backwards
+    // Using a simple slash replacement is faster than complex logic
+    return new Date(str.replace(/-/g, '/'));
+  }
+
+  // Handle Brazilian DD/MM/YYYY format
   if (str.includes('/')) {
     const parts = str.split(' ')[0].split('/');
     if (parts.length === 3 && parts[0].length <= 2 && parts[2].length === 4) {
-      // Reformat string to YYYY/MM/DD so native Date parses it correctly
       const timePart = str.includes(' ') ? ` ${str.split(' ').slice(1).join(' ')}` : '';
       str = `${parts[2]}/${parts[1]}/${parts[0]}${timePart}`;
     }
   }
 
-  // Handle YYYY-MM-DD format (10 chars, has hyphens, no 'T')
-  if (str.length === 10 && str.includes('-') && !str.includes('T')) {
-    // Replace - with / to force local date interpretation and avoid midnight-UTC-shift-backwards
-    return new Date(str.replace(/-/g, '/'));
-  }
   return new Date(str);
 };
 
 export const isCustomerActive = (dueDateStr: string) => {
+  if (!dueDateStr) return false;
   try {
-    if (!dueDateStr) return false;
     const dueDate = parseRobustLocalTime(dueDateStr);
-    if (isNaN(dueDate.getTime())) return false;
+    const dateTime = dueDate.getTime();
+    if (isNaN(dateTime)) return false;
 
+    // Fast path: avoid full Date object setup if we can
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const checkDate = new Date(dueDate);
-    checkDate.setHours(0, 0, 0, 0);
-    return checkDate >= today;
+    
+    // Ensure dueDate is also at midnight for comparison
+    dueDate.setHours(0, 0, 0, 0);
+    
+    return dueDate.getTime() >= today.getTime();
   } catch {
     return false;
   }

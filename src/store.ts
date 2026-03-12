@@ -140,28 +140,36 @@ export function useStore(user: User | null) {
         ]);
 
         if (customersData && customersData.length > 0) {
-          setCustomers(customersData.map((c: any) => ({
-            id: c.id?.toString() || '',
-            name: c.name || 'Sem Nome',
-            phone: c.phone || '',
-            serverId: (c.server_id || c.serverId || '').toString(),
-            planId: (PLAN_ID_MAP[c.plan_id] || PLAN_ID_MAP[c.planId] || c.plan_id || c.planId || '').toString(),
-            amountPaid: parseSafeNumber(c.amount_paid ?? c.amountPaid),
-            dueDate: c.due_date || c.dueDate || new Date().toISOString(),
-            lastNotifiedDate: c.last_not_date || c.last_notified_date || c.lastNotifiedDate,
-            lastOverdueNotifiedDate: c.last_overdue_not_date || c.last_overdue_notified_date || c.lastOverdueNotifiedDate
-          })));
+          const mappedCustomers = customersData.map((c: any) => {
+            const planId = (c.plan_id || c.planId || '').toString();
+            return {
+              id: c.id?.toString() || '',
+              name: c.name || 'Sem Nome',
+              phone: c.phone || '',
+              serverId: (c.server_id || c.serverId || '').toString(),
+              planId: (PLAN_ID_MAP[planId] || planId),
+              amountPaid: parseSafeNumber(c.amount_paid ?? c.amountPaid),
+              dueDate: c.due_date || c.dueDate || new Date().toISOString(),
+              lastNotifiedDate: c.last_not_date || c.last_notified_date || c.lastNotifiedDate,
+              lastOverdueNotifiedDate: c.last_overdue_not_date || c.last_overdue_notified_date || c.lastOverdueNotifiedDate
+            };
+          });
+          setCustomers(mappedCustomers);
         }
         if (renewalsData && renewalsData.length > 0) {
-          setRenewals(renewalsData.map((r: any) => ({
-            id: r.id?.toString() || '',
-            customerId: (r.customer_id || r.customerId || '').toString(),
-            serverId: (r.server_id || r.serverId || '').toString(),
-            planId: (PLAN_ID_MAP[r.plan_id] || PLAN_ID_MAP[r.planId] || r.plan_id || r.planId || '').toString(),
-            amount: parseSafeNumber(r.amount ?? (r as any).amount),
-            cost: parseSafeNumber(r.cost ?? (r as any).cost),
-            date: r.date || r.created_at || new Date().toISOString()
-          })));
+          const mappedRenewals = renewalsData.map((r: any) => {
+            const planId = (r.plan_id || r.planId || '').toString();
+            return {
+              id: r.id?.toString() || '',
+              customerId: (r.customer_id || r.customerId || '').toString(),
+              serverId: (r.server_id || r.serverId || '').toString(),
+              planId: (PLAN_ID_MAP[planId] || planId),
+              amount: parseSafeNumber(r.amount ?? (r as any).amount),
+              cost: parseSafeNumber(r.cost ?? (r as any).cost),
+              date: r.date || r.created_at || new Date().toISOString()
+            };
+          });
+          setRenewals(mappedRenewals);
         }
         if (additionsData && additionsData.length > 0) {
           setManualAdditions(additionsData.map((a: any) => ({

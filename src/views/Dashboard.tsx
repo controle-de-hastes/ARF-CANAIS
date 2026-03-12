@@ -36,18 +36,6 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
     const tMonth = today.getMonth();
     const tYear = today.getFullYear();
 
-    // Helper to check if a date string is in the current month
-    const isCurrentMonth = (dateStr: any) => {
-      try {
-        if (!dateStr) return false;
-        const d = parseRobustLocalTime(dateStr);
-        if (isNaN(d.getTime())) return false;
-        return d.getMonth() === tMonth && d.getFullYear() === tYear;
-      } catch {
-        return false;
-      }
-    };
-
     let totalGross = 0;
     let totalCost = 0;
     let mGross = 0;
@@ -66,10 +54,15 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
       };
     });
 
+    // Helper for monthly check - avoids repeated extraction of month/year
+    const isCurrentMonth = (d: Date) => {
+      return d.getMonth() === tMonth && d.getFullYear() === tYear;
+    };
+
     renewals.forEach(r => {
       const amount = parseSafeNumber(r.amount || (r as any).amount);
       const cost = parseSafeNumber(r.cost || (r as any).cost);
-      const date = r.date || (r as any).date || (r as any).created_at;
+      const dateStr = r.date || (r as any).date || (r as any).created_at;
       const sId = (r.serverId || (r as any).server_id || '').toString();
       
       totalGross += amount;
@@ -79,55 +72,61 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
         stats[sId].accumulatedTotal += amount;
       }
 
-      if (isCurrentMonth(date)) {
-        const plan = plansMap.get((r.planId || (r as any).plan_id));
-        const months = plan ? plan.months : 1;
-        const dividedAmount = amount / months;
-        const dividedCost = cost / months;
-        
-        mGross += dividedAmount;
-        mCost += dividedCost;
+      if (dateStr) {
+        const d = parseRobustLocalTime(dateStr);
+        if (!isNaN(d.getTime()) && isCurrentMonth(d)) {
+          const planId = r.planId || (r as any).plan_id;
+          const plan = plansMap.get(planId);
+          const months = plan ? plan.months : 1;
+          const dividedAmount = amount / months;
+          const dividedCost = cost / months;
+          
+          mGross += dividedAmount;
+          mCost += dividedCost;
 
-        if (stats[sId]) {
-          stats[sId].monthlyGross += dividedAmount;
-          stats[sId].monthlyCost += dividedCost;
+          if (stats[sId]) {
+            stats[sId].monthlyGross += dividedAmount;
+            stats[sId].monthlyCost += dividedCost;
+          }
         }
       }
     });
 
     const totalManualAdditions = manualAdditions.reduce((acc, a) => acc + parseSafeNumber(a.amount || (a as any).amount), 0);
-    const mAdditions = manualAdditions
-      .filter(a => isCurrentMonth(a.date || (a as any).date || (a as any).created_at))
-      .reduce((acc, a) => acc + parseSafeNumber(a.amount || (a as any).amount), 0);
+    const mAdditions = manualAdditions.reduce((acc, a) => {
+      const dateStr = a.date || (a as any).date || (a as any).created_at;
+      if (!dateStr) return acc;
+      const d = parseRobustLocalTime(dateStr);
+      if (!isNaN(d.getTime()) && isCurrentMonth(d)) {
+        return acc + parseSafeNumber(a.amount || (a as any).amount);
+      }
+      return acc;
+    }, 0);
 
     const expiring: Customer[] = [];
+    const todayTime = today.getTime();
+
     customers.forEach(c => {
-      try {
-        const dueDateStr = c.dueDate || (c as any).due_date;
-        if (!dueDateStr) return;
+      const dueDateStr = c.dueDate || (c as any).due_date;
+      if (!dueDateStr) return;
 
-        const isActive = isCustomerActive(dueDateStr.toString());
-        const sId = (c.serverId || (c as any).server_id || '').toString();
+      const dueDate = parseRobustLocalTime(dueDateStr.toString());
+      if (isNaN(dueDate.getTime())) return;
 
-        if (isActive && stats[sId]) {
-          stats[sId].active += 1;
-        }
+      const sId = (c.serverId || (c as any).server_id || '').toString();
+      
+      // Active check
+      dueDate.setHours(0, 0, 0, 0);
+      const dueTime = dueDate.getTime();
+      const isActive = dueTime >= todayTime;
 
-        const dParts = dueDateStr.toString().split('-');
-        let checkDate: Date;
-        if (dParts.length === 3) {
-          checkDate = new Date(parseInt(dParts[0]), parseInt(dParts[1]) - 1, parseInt(dParts[2]));
-        } else {
-          checkDate = new Date(dueDateStr.toString().replace(/-/g, '/'));
-        }
-        checkDate.setHours(0, 0, 0, 0);
+      if (isActive && stats[sId]) {
+        stats[sId].active += 1;
+      }
 
-        const daysUntilDue = differenceInDays(checkDate, today);
-        if (daysUntilDue >= -10 && daysUntilDue <= 7) {
-          expiring.push(c);
-        }
-      } catch (e) {
-        console.error('Erro ao processar cliente no dashboard:', c.name, e);
+      const daysUntilDue = Math.round((dueTime - todayTime) / (1000 * 60 * 60 * 24));
+      if (daysUntilDue >= -10 && daysUntilDue <= 7) {
+        expiring.push(c);
       }
     });
 
@@ -198,7 +197,11 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
 
   const pendingNotifications = useMemo(() => {
     return expiringCustomers.filter(c => {
-      const days = differenceInDays(parseISO(c.dueDate), today);
+      const dueDateStr = c.dueDate || (c as any).due_date;
+      if (!dueDateStr) return false;
+      const dueDate = parseRobustLocalTime(dueDateStr);
+      dueDate.setHours(0, 0, 0, 0);
+      const days = Math.round((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
       return days === 7 && c.lastNotifiedDate !== format(today, 'yyyy-MM-dd');
     });
   }, [expiringCustomers, today]);

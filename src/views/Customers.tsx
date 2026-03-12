@@ -203,40 +203,66 @@ export function Customers({
 
   // Statistics
   const stats = useMemo(() => {
-    const activeCustomers = customers.filter(c => isCustomerActive(c.dueDate));
-    const mensalista = activeCustomers.filter(c => {
-      const plan = plans.find(p => p.id === c.planId);
-      return plan && plan.name !== 'Gratuito';
-    }).length;
-    const gratuito = activeCustomers.filter(c => {
-      const plan = plans.find(p => p.id === c.planId);
-      return plan && plan.name === 'Gratuito';
-    }).length;
+    let total = 0;
+    let mensalista = 0;
+    let gratuito = 0;
+    let inativos = 0;
 
-    const inativos = customers.filter(c => !isCustomerActive(c.dueDate)).length;
+    const todayTime = today.getTime();
 
-    return {
-      total: activeCustomers.length,
-      mensalista,
-      gratuito,
-      inativos
-    };
-  }, [customers, plans]);
+    customers.forEach(c => {
+      const dueDate = parseRobustLocalTime(c.dueDate);
+      if (isNaN(dueDate.getTime())) {
+        inativos++;
+        return;
+      }
+      
+      dueDate.setHours(0, 0, 0, 0);
+      const isActive = dueDate.getTime() >= todayTime;
+
+      if (isActive) {
+        total++;
+        const plan = plans.find(p => p.id === c.planId);
+        if (plan?.name === 'Gratuito') {
+          gratuito++;
+        } else {
+          mensalista++;
+        }
+      } else {
+        inativos++;
+      }
+    });
+
+    return { total, mensalista, gratuito, inativos };
+  }, [customers, plans, today]);
 
 
   // Filter and sort customers
   const filteredCustomers = useMemo(() => {
+    const query = searchQuery.toLowerCase();
+    const todayTime = today.getTime();
+
     return customers.filter(c => {
-      const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.phone.includes(searchQuery);
+      const matchesSearch = !query || c.name.toLowerCase().includes(query) || c.phone.includes(query);
+      if (!matchesSearch) return false;
+
       const matchesServer = serverFilter === 'all' || c.serverId === serverFilter;
+      if (!matchesServer) return false;
 
-      const isActive = isCustomerActive(c.dueDate);
-      const status = isActive ? 'Ativo' : 'Vencido';
-      const matchesStatus = statusFilter === 'all' || status.toLowerCase() === statusFilter;
+      if (statusFilter !== 'all') {
+        const dueDate = parseRobustLocalTime(c.dueDate);
+        dueDate.setHours(0, 0, 0, 0);
+        const isActive = dueDate.getTime() >= todayTime;
+        const status = isActive ? 'ativo' : 'vencido';
+        if (status !== statusFilter) return false;
+      }
 
-      return matchesSearch && matchesServer && matchesStatus;
-    }).sort((a, b) => parseISO(a.dueDate).getTime() - parseISO(b.dueDate).getTime());
+      return true;
+    }).sort((a, b) => {
+      const dateA = new Date(a.dueDate).getTime() || 0;
+      const dateB = new Date(b.dueDate).getTime() || 0;
+      return dateA - dateB;
+    });
   }, [customers, searchQuery, serverFilter, statusFilter, today]);
 
   return (
