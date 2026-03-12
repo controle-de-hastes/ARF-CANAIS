@@ -22,22 +22,42 @@ const PLAN_ID_MAP: Record<string, string> = {
 };
 
 export function useStore(user: User | null) {
-  const [loading, setLoading] = useState(true);
-  const [userRole, setUserRole] = useState<UserRole>('observer');
+  // Enhanced Loading State
+  const [loading, setLoading] = useState(() => {
+    // If we have some critical data cached, we can skip the initial blocking loader
+    return !localStorage.getItem('arf_customers');
+  });
+
+  const [userRole, setUserRole] = useState<UserRole>('owner');
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userAvatar, setUserAvatar] = useState<string | null>(() => {
     return localStorage.getItem('arf_user_avatar');
   });
 
-  const [servers, setServers] = useState<Server[]>([]);
+  const [servers, setServers] = useState<Server[]>(() => {
+    const saved = localStorage.getItem('arf_servers');
+    try { return saved ? JSON.parse(saved) : []; } catch { return []; }
+  });
 
-  const [plans, setPlans] = useState<Plan[]>(DEFAULT_PLANS);
+  const [plans, setPlans] = useState<Plan[]>(() => {
+    const saved = localStorage.getItem('arf_plans');
+    try { return saved ? JSON.parse(saved) : DEFAULT_PLANS; } catch { return DEFAULT_PLANS; }
+  });
 
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>(() => {
+    const saved = localStorage.getItem('arf_customers');
+    try { return saved ? JSON.parse(saved) : []; } catch { return []; }
+  });
 
-  const [renewals, setRenewals] = useState<Renewal[]>([]);
+  const [renewals, setRenewals] = useState<Renewal[]>(() => {
+    const saved = localStorage.getItem('arf_renewals');
+    try { return saved ? JSON.parse(saved) : []; } catch { return []; }
+  });
 
-  const [manualAdditions, setManualAdditions] = useState<ManualAddition[]>([]);
+  const [manualAdditions, setManualAdditions] = useState<ManualAddition[]>(() => {
+    const saved = localStorage.getItem('arf_manual_additions');
+    try { return saved ? JSON.parse(saved) : []; } catch { return []; }
+  });
 
   const [whatsappMessage, setWhatsappMessage] = useState<string>(() => {
     const saved = localStorage.getItem('arf_message_v2');
@@ -73,10 +93,10 @@ export function useStore(user: User | null) {
       try {
         // Start both phases concurrently
         const phase1Promise = Promise.all([
-          supabase.from('servers').select('id, name, cost_per_active').eq('user_id', user.id).order('name'),
-          supabase.from('plans').select('id, name, default_price, months').eq('user_id', user.id).order('months'),
-          supabase.from('settings').select('whatsapp_message, renewal_message, app_icon, app_cover').eq('user_id', user.id).maybeSingle(),
-          supabase.from('profiles').select('role, avatar_url').eq('id', user.id).maybeSingle()
+          supabase.from('servers').select('*').order('name'),
+          supabase.from('plans').select('*').order('months'),
+          supabase.from('settings').select('*').eq('user_id', user.id).maybeSingle(),
+          supabase.from('profiles').select('role, parent_id, avatar_url').eq('id', user.id).maybeSingle()
         ]);
 
         const threeMonthsAgo = new Date();
@@ -84,12 +104,12 @@ export function useStore(user: User | null) {
         const threeMonthsAgoISO = threeMonthsAgo.toISOString();
 
         const phase2Promise = Promise.all([
-          supabase.from('customers').select('id, name, phone, server_id, plan_id, amount_paid, due_date, last_not_date, last_notified_date, last_overdue_not_date, last_overdue_notified_date, has_reset_counters').eq('user_id', user.id).order('name'),
-          supabase.from('renewals').select('id, customer_id, server_id, plan_id, amount, cost, date').eq('user_id', user.id).gte('date', threeMonthsAgoISO).order('date', { ascending: false }),
-          supabase.from('manual_additions').select('id, amount, date, description').eq('user_id', user.id).gte('date', threeMonthsAgoISO).order('date', { ascending: false })
+          supabase.from('customers').select('*').order('name'),
+          supabase.from('renewals').select('*').gte('date', threeMonthsAgoISO).order('date', { ascending: false }),
+          supabase.from('manual_additions').select('*').gte('date', threeMonthsAgoISO).order('date', { ascending: false })
         ]);
 
-        // Wait for Phase 1 to unlock UI
+        // Process Phase 1
         const [
           { data: serversData },
           { data: plansData },
@@ -111,78 +131,80 @@ export function useStore(user: User | null) {
           setUserRole('owner');
         }
 
-        if (serversData && serversData.length > 0) {
-          setServers(serversData.map((s: any) => ({
+        if (serversData) {
+          const mappedServers = serversData.map((s: any) => ({
             id: s.id?.toString() || '',
             name: s.name || 'Sem Nome',
             costPerActive: parseSafeNumber(s.cost_per_active ?? s.costPerActive)
-          })));
+          }));
+          setServers(mappedServers);
+          localStorage.setItem('arf_servers', JSON.stringify(mappedServers));
         }
-        if (plansData && plansData.length > 0) {
-          setPlans(plansData.map((p: any) => ({
+        if (plansData) {
+          const mappedPlans = plansData.map((p: any) => ({
             id: p.id?.toString() || '',
             name: p.name || 'Plano',
             defaultPrice: parseSafeNumber(p.default_price ?? p.defaultPrice),
             months: Number(p.months ?? 1)
-          })));
+          }));
+          setPlans(mappedPlans);
+          localStorage.setItem('arf_plans', JSON.stringify(mappedPlans));
         }
         if (settingsData) {
-          if (settingsData.whatsapp_message) setWhatsappMessage(settingsData.whatsapp_message);
-          if (settingsData.renewal_message) setRenewalMessage(settingsData.renewal_message);
-          if (settingsData.app_icon) setAppIcon(settingsData.app_icon);
-          if (settingsData.app_cover) setAppCover(settingsData.app_cover);
+          if (settingsData.whatsapp_message || (settingsData as any).whatsappMessage) setWhatsappMessage(settingsData.whatsapp_message || (settingsData as any).whatsappMessage);
+          if (settingsData.renewal_message || (settingsData as any).renewalMessage) setRenewalMessage(settingsData.renewal_message || (settingsData as any).renewalMessage);
+          if (settingsData.app_icon || (settingsData as any).appIcon) setAppIcon(settingsData.app_icon || (settingsData as any).appIcon);
+          if (settingsData.app_cover || (settingsData as any).appCover) setAppCover(settingsData.app_cover || (settingsData as any).appCover);
         }
 
-        // Release the main spinner early
+        // UNBLOCK UI EARLY - Allow navigation after metadata is in
         setLoading(false);
 
-        // Wait for Phase 2 (already running in background)
+        // Process Phase 2 (Background)
         const [
           { data: customersData },
           { data: renewalsData },
           { data: additionsData }
         ] = await phase2Promise;
 
-        if (customersData && customersData.length > 0) {
-          const mappedCustomers = customersData.map((c: any) => {
-            const planId = (c.plan_id || c.planId || '').toString();
-            return {
-              id: c.id?.toString() || '',
-              name: c.name || 'Sem Nome',
-              phone: c.phone || '',
-              serverId: (c.server_id || c.serverId || '').toString(),
-              planId: (PLAN_ID_MAP[planId] || planId),
-              amountPaid: parseSafeNumber(c.amount_paid ?? c.amountPaid),
-              dueDate: c.due_date || c.dueDate || new Date().toISOString(),
-              lastNotifiedDate: c.last_not_date || c.last_notified_date,
-              lastOverdueNotifiedDate: c.last_overdue_not_date || c.last_overdue_notified_date,
-              hasResetCounters: Boolean(c.has_reset_counters)
-            };
-          });
+        if (customersData) {
+          const mappedCustomers = customersData.map((c: any) => ({
+            id: c.id?.toString() || '',
+            name: c.name || 'Sem Nome',
+            phone: c.phone || '',
+            serverId: (c.server_id || c.serverId || '').toString(),
+            planId: (PLAN_ID_MAP[c.plan_id] || PLAN_ID_MAP[c.planId] || c.plan_id || c.planId || '').toString(),
+            amountPaid: parseSafeNumber(c.amount_paid ?? c.amountPaid),
+            dueDate: c.due_date || c.dueDate || new Date().toISOString(),
+            lastNotifiedDate: c.last_not_date || c.last_notified_date || c.lastNotifiedDate,
+            lastOverdueNotifiedDate: c.last_overdue_not_date || c.last_overdue_notified_date || c.lastOverdueNotifiedDate,
+            hasResetCounters: Boolean(c.has_reset_counters || c.hasResetCounters)
+          }));
           setCustomers(mappedCustomers);
+          localStorage.setItem('arf_customers', JSON.stringify(mappedCustomers));
         }
-        if (renewalsData && renewalsData.length > 0) {
-          const mappedRenewals = renewalsData.map((r: any) => {
-            const planId = (r.plan_id || r.planId || '').toString();
-            return {
-              id: r.id?.toString() || '',
-              customerId: (r.customer_id || r.customerId || '').toString(),
-              serverId: (r.server_id || r.serverId || '').toString(),
-              planId: (PLAN_ID_MAP[planId] || planId),
-              amount: parseSafeNumber(r.amount ?? (r as any).amount),
-              cost: parseSafeNumber(r.cost ?? (r as any).cost),
-              date: r.date || r.created_at || new Date().toISOString()
-            };
-          });
+        if (renewalsData) {
+          const mappedRenewals = renewalsData.map((r: any) => ({
+            id: r.id?.toString() || '',
+            customerId: (r.customer_id || r.customerId || '').toString(),
+            serverId: (r.server_id || r.serverId || '').toString(),
+            planId: (PLAN_ID_MAP[r.plan_id] || PLAN_ID_MAP[r.planId] || r.plan_id || r.planId || '').toString(),
+            amount: parseSafeNumber(r.amount ?? (r as any).amount),
+            cost: parseSafeNumber(r.cost ?? (r as any).cost),
+            date: r.date || r.created_at || new Date().toISOString()
+          }));
           setRenewals(mappedRenewals);
+          localStorage.setItem('arf_renewals', JSON.stringify(mappedRenewals));
         }
-        if (additionsData && additionsData.length > 0) {
-          setManualAdditions(additionsData.map((a: any) => ({
+        if (additionsData) {
+          const mappedAdditions = additionsData.map((a: any) => ({
             id: a.id?.toString() || '',
             amount: parseSafeNumber(a.amount ?? (a as any).amount),
             date: a.date || a.created_at || new Date().toISOString(),
             description: a.description || ''
-          })));
+          }));
+          setManualAdditions(mappedAdditions);
+          localStorage.setItem('arf_manual_additions', JSON.stringify(mappedAdditions));
         }
       } catch (error) {
         console.error('Error loading data from Supabase:', error);
