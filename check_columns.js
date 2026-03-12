@@ -16,17 +16,32 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function check() {
-  const table = 'customers';
-  console.log(`Listing customers in ${table}...`);
-  const { data, error } = await supabase.from(table).select('*').limit(20);
-  if (error) {
-    console.error(`Error checking ${table}:`, error.message);
-  } else if (data && data.length > 0) {
-    console.log(`Found ${data.length} records.`);
-    console.log(`Names:`, data.map(c => c.name).join(', '));
-    console.log(`A sample record:`, JSON.stringify(data[0], null, 2));
-  } else {
-    console.log(`No records found in ${table}.`);
+  const tables = ['servers', 'plans', 'customers', 'renewals', 'manual_additions', 'settings', 'profiles'];
+  console.log('--- Performance Diagnostics ---');
+  
+  for (const table of tables) {
+    const { data, count, error } = await supabase.from(table).select('*', { count: 'exact' });
+    if (error) {
+      console.error(`Error checking ${table}:`, error.message);
+      continue;
+    }
+    
+    const rowCount = count || (data ? data.length : 0);
+    const jsonSize = data ? JSON.stringify(data).length : 0;
+    const sizeKB = (jsonSize / 1024).toFixed(2);
+    
+    console.log(`Table: ${table.padEnd(16)} | Rows: ${rowCount.toString().padEnd(5)} | Size: ${sizeKB.padStart(8)} KB`);
+    
+    // Check for specific large fields in settings or profiles
+    if ((table === 'settings' || table === 'profiles') && data && data.length > 0) {
+      for (const row of data) {
+        for (const [key, value] of Object.entries(row)) {
+          if (typeof value === 'string' && value.length > 1000) {
+            console.log(`  [ALERT] Large field found in ${table}: ${key} (${(value.length / 1024).toFixed(2)} KB)`);
+          }
+        }
+      }
+    }
   }
 }
 

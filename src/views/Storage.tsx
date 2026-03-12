@@ -1,6 +1,7 @@
 import { useState, useEffect, ChangeEvent, useMemo } from 'react';
 import { Database, Download, Upload, Trash2, HardDrive, Calendar as CalendarIcon, TrendingUp, TrendingDown, DollarSign, Image as ImageIcon, History } from 'lucide-react';
 import { Customer, Server, Plan, Renewal, ManualAddition, UserRole } from '../types';
+import { DataDiagnostics } from '../store';
 import { format, parseISO, isWithinInterval, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { formatCurrency, parseCurrency, parseExcelDate, parseSafeNumber, parseRobustLocalTime } from '../utils';
@@ -25,9 +26,46 @@ interface StorageProps {
   setAppCover: (cover: string | null) => void;
   syncToCloud: (data?: any, clearFirst?: boolean) => Promise<void>;
   userRole: UserRole;
+  diagnostics: DataDiagnostics;
 }
 
-export function Storage({ customers, servers, plans, renewals, manualAdditions, bulkUpdateCustomers, setServers, setPlans, setRenewals, setManualAdditions, appIcon, setAppIcon, appCover, setAppCover, syncToCloud, userRole }: StorageProps) {
+const compressImage = (file: File, maxWidth: number, maxHeight: number): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height *= maxWidth / width;
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width *= maxHeight / height;
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
+      };
+      img.onerror = error => reject(error);
+    };
+    reader.onerror = error => reject(error);
+  });
+};
+
+export function Storage({ customers, servers, plans, renewals, manualAdditions, bulkUpdateCustomers, setServers, setPlans, setRenewals, setManualAdditions, appIcon, setAppIcon, appCover, setAppCover, syncToCloud, userRole, diagnostics }: StorageProps) {
   const [storageSize, setStorageSize] = useState<string>('0 KB');
   const [isFullHistoryOpen, setIsFullHistoryOpen] = useState(false);
   const [importPreview, setImportPreview] = useState<Customer[]>([]);
@@ -256,25 +294,27 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
     }
   };
 
-  const handleIconUpload = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleIconUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setAppIcon(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      try {
+        const compressed = await compressImage(file, 256, 256);
+        setAppIcon(compressed);
+      } catch (err) {
+        console.error('Error compressing icon:', err);
+      }
     }
   };
 
-  const handleCoverUpload = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleCoverUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setAppCover(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      try {
+        const compressed = await compressImage(file, 1200, 630);
+        setAppCover(compressed);
+      } catch (err) {
+        console.error('Error compressing cover:', err);
+      }
     }
   };
 
@@ -650,13 +690,15 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
           <button
             onClick={() => {
               if (confirm('Deseja resetar os tempos de aviso de TODOS os clientes? Isso liberará todos os botões de notificação imediatamente.')) {
-                bulkUpdateCustomers(prev => prev.map(c => ({
+                const updatedCustomers = customers.map(c => ({
                   ...c,
                   lastNotifiedDate: undefined,
                   lastOverdueNotifiedDate: undefined
-                })));
+                }));
+                
+                bulkUpdateCustomers(() => updatedCustomers);
                 alert('Tempos de aviso resetados com sucesso! Sincronizando com a nuvem...');
-                syncToCloud();
+                syncToCloud({ customers: updatedCustomers });
               }
             }}
             className="w-full flex items-center justify-between p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-2xl hover:bg-yellow-500/20 transition-colors group"
@@ -819,33 +861,56 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
       <div className="bg-[#1a1a1a] p-6 rounded-3xl border border-white/5 shadow-lg">
         <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center space-x-2">
           <Database size={16} />
-          <span>Detalhes Técnicos</span>
+          <span>Detalhes Técnicos & Diagnóstico</span>
         </h3>
         <div className="space-y-4">
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-gray-500">Clientes</span>
-            <span className="text-white font-mono">{customers.length}</span>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-[#0f0f0f] p-3 rounded-xl border border-white/5">
+              <div className="text-[9px] uppercase tracking-wider text-gray-500 mb-1">Carga Básica (Fase 1)</div>
+              <div className={`text-sm font-bold ${diagnostics.phase1Time && diagnostics.phase1Time > 2000 ? 'text-red-400' : 'text-green-400'}`}>
+                {diagnostics.phase1Time ? `${diagnostics.phase1Time}ms` : '---'}
+              </div>
+            </div>
+            <div className="bg-[#0f0f0f] p-3 rounded-xl border border-white/5">
+              <div className="text-[9px] uppercase tracking-wider text-gray-500 mb-1">Carga Dados (Fase 2)</div>
+              <div className={`text-sm font-bold ${diagnostics.phase2Time && diagnostics.phase2Time > 5000 ? 'text-red-400' : 'text-green-400'}`}>
+                {diagnostics.phase2Time ? `${diagnostics.phase2Time}ms` : '---'}
+              </div>
+            </div>
           </div>
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-gray-500">Servidores</span>
-            <span className="text-white font-mono">{servers.length}</span>
+
+          <div className="bg-[#0f0f0f] p-3 rounded-xl border border-white/5">
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-[9px] uppercase tracking-wider text-gray-500">Peso das Configurações</span>
+              {diagnostics.settingsSize && diagnostics.settingsSize > 500000 && (
+                <span className="text-[9px] bg-red-500/20 text-red-500 px-1 rounded font-bold">PESADO</span>
+              )}
+            </div>
+            <div className="text-sm font-bold text-white">
+              {diagnostics.settingsSize ? `${(diagnostics.settingsSize / 1024).toFixed(2)} KB` : '---'}
+            </div>
+            <div className="text-[9px] text-gray-600 mt-1 italic">
+              *Ícones e capas grandes aumentam muito este valor.
+            </div>
           </div>
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-gray-500">Planos</span>
-            <span className="text-white font-mono">{plans.length}</span>
+
+          <div className="space-y-2 pt-2">
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-gray-500">Registros Totais</span>
+              <span className="text-white font-mono">{customers.length + servers.length + plans.length + renewals.length + manualAdditions.length}</span>
+            </div>
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-gray-500">Última Sincronização</span>
+              <span className="text-white font-mono text-[10px]">
+                {diagnostics.lastSync ? format(parseISO(diagnostics.lastSync), "HH:mm:ss") : 'Nunca'}
+              </span>
+            </div>
           </div>
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-gray-500">Renovações</span>
-            <span className="text-white font-mono">{renewals.length}</span>
-          </div>
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-gray-500">Adições Manuais</span>
-            <span className="text-white font-mono">{manualAdditions.length}</span>
-          </div>
-          <div className="pt-4 border-t border-white/5 text-[10px] text-gray-600 leading-relaxed">
-            Seus dados estão sendo sincronizados com a nuvem (Supabase).
-            Isso permite que você acesse suas informações de qualquer dispositivo.
-            O botão "Sincronizar com a Nuvem" acima garante que seus dados locais atuais sejam carregados para o servidor.
+
+          <div className="pt-4 border-t border-white/5 text-[10px] text-gray-600 leading-relaxed bg-blue-500/5 p-3 rounded-xl border border-blue-500/10">
+            <p className="font-bold text-blue-400 mb-1">DICA DE PERFORMANCE:</p>
+            Se o "Peso das Configurações" estiver alto (mais de 500KB), tente carregar novamente o ícone ou a capa do app. 
+            Eu adicionei um compressor automático que deixará as imagens muito mais leves ao serem salvas novamente.
           </div>
         </div>
       </div>

@@ -312,7 +312,7 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
               const server = servers.find(s => s.id === (c.serverId || (c as any).server_id));
               const days = differenceInDays(parseISO(c.dueDate || (c as any).due_date), today);
 
-              const lastOverdueNotified = c.lastOverdueNotifiedDate || (c as any).last_overdue_notified_date;
+              const lastOverdueNotified = c.lastOverdueNotifiedDate;
               const lastOverdueDate = lastOverdueNotified ? parseISO(lastOverdueNotified) : null;
               const isOnCooldown = lastOverdueDate && !isNaN(lastOverdueDate.getTime()) && differenceInDays(today, lastOverdueDate) < 10;
 

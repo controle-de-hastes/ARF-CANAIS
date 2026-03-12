@@ -21,12 +21,25 @@ const PLAN_ID_MAP: Record<string, string> = {
   '4': '2c5a2bc9-f538-43d9-95e5-f55a15998f82',
 };
 
+const toUUID = (id: string | undefined | null) => (id && id.trim() !== '' ? id : null);
+
+export interface DataDiagnostics {
+  phase1Time?: number;
+  phase2Time?: number;
+  settingsSize?: number;
+  customerCount?: number;
+  renewalCount?: number;
+  lastSync?: string;
+}
+
 export function useStore(user: User | null) {
   // Enhanced Loading State
   const [loading, setLoading] = useState(() => {
     // If we have synced before, skip the blocking loader
     return !localStorage.getItem('arf_synced');
   });
+
+  const [diagnostics, setDiagnostics] = useState<DataDiagnostics>({});
 
   const [userRole, setUserRole] = useState<UserRole>('owner');
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -98,21 +111,24 @@ export function useStore(user: User | null) {
 
       try {
         // Start both phases concurrently
+        const startTime = performance.now();
+        console.time('Phase 1 Load');
         const phase1Promise = Promise.all([
-          supabase.from('servers').select('*').order('name'),
-          supabase.from('plans').select('*').order('months'),
-          supabase.from('settings').select('*').eq('user_id', user.id).maybeSingle(),
-          supabase.from('profiles').select('role, parent_id, avatar_url').eq('id', user.id).maybeSingle()
+          supabase.from('servers').select('*').order('name').then(r => { console.log('Servers loaded'); return r; }),
+          supabase.from('plans').select('*').order('months').then(r => { console.log('Plans loaded'); return r; }),
+          supabase.from('settings').select('*').eq('user_id', user.id).maybeSingle().then(r => { console.log('Settings loaded'); return r; }),
+          supabase.from('profiles').select('role, parent_id, avatar_url').eq('id', user.id).maybeSingle().then(r => { console.log('Profile loaded'); return r; })
         ]);
 
         const threeMonthsAgo = new Date();
         threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
         const threeMonthsAgoISO = threeMonthsAgo.toISOString();
 
+        console.time('Phase 2 Load');
         const phase2Promise = Promise.all([
-          supabase.from('customers').select('*').order('name'),
-          supabase.from('renewals').select('*').gte('date', threeMonthsAgoISO).order('date', { ascending: false }),
-          supabase.from('manual_additions').select('*').gte('date', threeMonthsAgoISO).order('date', { ascending: false })
+          supabase.from('customers').select('*').order('name').then(r => { console.log('Customers loaded'); return r; }),
+          supabase.from('renewals').select('*').gte('date', threeMonthsAgoISO).order('date', { ascending: false }).then(r => { console.log('Renewals loaded'); return r; }),
+          supabase.from('manual_additions').select('*').gte('date', threeMonthsAgoISO).order('date', { ascending: false }).then(r => { console.log('Additions loaded'); return r; })
         ]);
 
         // Process Phase 1
@@ -123,6 +139,16 @@ export function useStore(user: User | null) {
           { data: settingsData },
           { data: profileData }
         ] = results1;
+
+        const phase1EndTime = performance.now();
+        const settingsPayloadSize = settingsData ? JSON.stringify(settingsData).length : 0;
+        
+        setDiagnostics(prev => ({
+          ...prev,
+          phase1Time: Math.round(phase1EndTime - startTime),
+          settingsSize: settingsPayloadSize,
+          lastSync: new Date().toISOString()
+        }));
 
         if (profileData) {
           if (profileData.role) {
@@ -166,6 +192,7 @@ export function useStore(user: User | null) {
 
         // Mark as synced and unblock UI early
         localStorage.setItem('arf_synced', 'true');
+        console.timeEnd('Phase 1 Load');
         setLoading(false);
 
         // Process Phase 2 (Background)
@@ -184,9 +211,9 @@ export function useStore(user: User | null) {
             planId: (PLAN_ID_MAP[c.plan_id] || PLAN_ID_MAP[c.planId] || c.plan_id || c.planId || '').toString(),
             amountPaid: parseSafeNumber(c.amount_paid ?? c.amountPaid),
             dueDate: c.due_date || c.dueDate || new Date().toISOString(),
-            lastNotifiedDate: c.last_not_date || c.last_notified_date || c.lastNotifiedDate,
-            lastOverdueNotifiedDate: c.last_overdue_not_date || c.last_overdue_notified_date || c.lastOverdueNotifiedDate,
-            hasResetCounters: Boolean(c.has_reset_counters || c.hasResetCounters)
+            lastNotifiedDate: c.last_notified_date !== undefined ? c.last_notified_date : (c.last_not_date !== undefined ? c.last_not_date : c.lastNotifiedDate),
+            lastOverdueNotifiedDate: c.last_overdue_notified_date !== undefined ? c.last_overdue_notified_date : c.lastOverdueNotifiedDate,
+            hasResetCounters: Boolean(c.has_reset_counters !== undefined ? c.has_reset_counters : c.hasResetCounters)
           }));
           setCustomers(mappedCustomers);
           localStorage.setItem('arf_customers', JSON.stringify(mappedCustomers));
@@ -214,6 +241,16 @@ export function useStore(user: User | null) {
           setManualAdditions(mappedAdditions);
           localStorage.setItem('arf_manual_additions', JSON.stringify(mappedAdditions));
         }
+        
+        const phase2EndTime = performance.now();
+        setDiagnostics(prev => ({
+          ...prev,
+          phase2Time: Math.round(phase2EndTime - phase1EndTime),
+          customerCount: customersData?.length || 0,
+          renewalCount: renewalsData?.length || 0
+        }));
+
+        console.timeEnd('Phase 2 Load');
       } catch (error) {
         console.error('Error loading data from Supabase:', error);
         setLoading(false);
@@ -271,8 +308,8 @@ export function useStore(user: User | null) {
         id: customer.id,
         name: customer.name,
         phone: customer.phone,
-        server_id: customer.serverId,
-        plan_id: customer.planId,
+        server_id: toUUID(customer.serverId),
+        plan_id: toUUID(customer.planId),
         amount_paid: customer.amountPaid,
         due_date: customer.dueDate,
         last_notified_date: customer.lastNotifiedDate,
@@ -284,6 +321,8 @@ export function useStore(user: User | null) {
         return false;
       }
     }
+    const updated = [...customers, customer];
+    localStorage.setItem('arf_customers', JSON.stringify(updated));
     return true;
   };
 
@@ -293,15 +332,16 @@ export function useStore(user: User | null) {
       const updateData: any = {};
       if (data.name !== undefined) updateData.name = data.name;
       if (data.phone !== undefined) updateData.phone = data.phone;
-      if (data.serverId !== undefined) updateData.server_id = data.serverId;
-      if (data.planId !== undefined) updateData.plan_id = data.planId;
+      if (data.serverId !== undefined) updateData.server_id = toUUID(data.serverId);
+      if (data.planId !== undefined) updateData.plan_id = toUUID(data.planId);
       if (data.amountPaid !== undefined) updateData.amount_paid = data.amountPaid;
       if (data.dueDate !== undefined) updateData.due_date = data.dueDate;
-      if (data.lastNotifiedDate !== undefined) updateData.last_notified_date = data.lastNotifiedDate;
-      if (data.lastOverdueNotifiedDate !== undefined) updateData.last_overdue_not_date = data.lastOverdueNotifiedDate;
+      if (data.lastNotifiedDate !== undefined) updateData.last_notified_date = data.lastNotifiedDate || null;
+      if (data.lastOverdueNotifiedDate !== undefined) updateData.last_overdue_notified_date = data.lastOverdueNotifiedDate || null;
       supabase.from('customers').update(updateData).eq('id', id).then(({ error }) => {
         if (error) console.error('Error updating customer in cloud:', error);
       });
+      localStorage.setItem('arf_customers', JSON.stringify(customers.map(c => c.id === id ? { ...c, ...data } : c)));
     }
   };
 
@@ -333,7 +373,7 @@ export function useStore(user: User | null) {
     if (user) {
       const { error } = await supabase.from('customers')
         .update({ amount_paid: 0, has_reset_counters: true })
-        .eq('server_id', serverId);
+        .eq('server_id', toUUID(serverId));
 
       if (error) {
         console.error('Error resetting server stats in cloud:', error);
@@ -369,14 +409,14 @@ export function useStore(user: User | null) {
     }
 
     if (user) {
-      await supabase.from('customers').update({ server_id: newServerId }).eq('id', customerId);
+      await supabase.from('customers').update({ server_id: toUUID(newServerId) }).eq('id', customerId);
     }
   };
 
   const bulkUpdateCustomers = async (updater: (prev: Customer[]) => Customer[]) => {
     setCustomers(prev => {
       const next = updater(prev);
-      // Bulk update in background if needed, but usually used for imports
+      localStorage.setItem('arf_customers', JSON.stringify(next));
       return next;
     });
   };
@@ -387,9 +427,9 @@ export function useStore(user: User | null) {
     if (user) {
       const { error } = await supabase.from('renewals').insert({
         id: newRenewal.id,
-        customer_id: newRenewal.customerId,
-        server_id: newRenewal.serverId,
-        plan_id: newRenewal.planId,
+        customer_id: toUUID(newRenewal.customerId),
+        server_id: toUUID(newRenewal.serverId),
+        plan_id: toUUID(newRenewal.planId),
         amount: newRenewal.amount,
         cost: newRenewal.cost,
         date: newRenewal.date,
@@ -551,12 +591,12 @@ export function useStore(user: User | null) {
           id: c.id,
           name: c.name,
           phone: c.phone,
-          server_id: c.serverId,
-          plan_id: c.planId,
+          server_id: toUUID(c.serverId),
+          plan_id: toUUID(c.planId),
           amount_paid: c.amountPaid,
           due_date: c.dueDate,
-          last_notified_date: c.lastNotifiedDate,
-          last_overdue_notified_date: c.lastOverdueNotifiedDate,
+          last_notified_date: c.lastNotifiedDate || null,
+          last_overdue_notified_date: c.lastOverdueNotifiedDate || null,
           user_id: user.id
         })));
         if (error) throw error;
@@ -567,9 +607,9 @@ export function useStore(user: User | null) {
         console.log('Syncing renewals...');
         const { error } = await supabase.from('renewals').upsert(dataToSync.renewals.map(r => ({
           id: r.id,
-          customer_id: r.customerId,
-          server_id: r.serverId,
-          plan_id: r.planId,
+          customer_id: toUUID(r.customerId),
+          server_id: toUUID(r.serverId),
+          plan_id: toUUID(r.planId),
           amount: r.amount,
           cost: r.cost,
           date: r.date,
@@ -614,7 +654,8 @@ export function useStore(user: User | null) {
     renewalMessage, setRenewalMessage,
     appIcon, setAppIcon,
     appCover, setAppCover,
-    syncToCloud: syncToCloud as (overrideData?: any, clearFirst?: boolean) => Promise<void>
+    syncToCloud: syncToCloud as (overrideData?: any, clearFirst?: boolean) => Promise<void>,
+    diagnostics
   };
 }
 

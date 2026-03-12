@@ -139,6 +139,7 @@ export default function App() {
             setAppCover={store.setAppCover}
             syncToCloud={store.syncToCloud}
             userRole={store.userRole}
+            diagnostics={store.diagnostics}
           />
         );
       case 'admin':
