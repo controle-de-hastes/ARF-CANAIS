@@ -24,8 +24,8 @@ const PLAN_ID_MAP: Record<string, string> = {
 export function useStore(user: User | null) {
   // Enhanced Loading State
   const [loading, setLoading] = useState(() => {
-    // If we have some critical data cached, we can skip the initial blocking loader
-    return !localStorage.getItem('arf_customers');
+    // If we have synced before, skip the blocking loader
+    return !localStorage.getItem('arf_synced');
   });
 
   const [userRole, setUserRole] = useState<UserRole>('owner');
@@ -87,8 +87,14 @@ export function useStore(user: User | null) {
         return;
       }
       
-      setLoading(true);
-      setUserEmail(user.email || null);
+      if (userEmail !== user.email) {
+        setUserEmail(user.email || null);
+      }
+      
+      const isSynced = !!localStorage.getItem('arf_synced');
+      if (!isSynced) {
+        setLoading(true);
+      }
 
       try {
         // Start both phases concurrently
@@ -110,12 +116,13 @@ export function useStore(user: User | null) {
         ]);
 
         // Process Phase 1
+        const results1 = await phase1Promise;
         const [
           { data: serversData },
           { data: plansData },
           { data: settingsData },
           { data: profileData }
-        ] = await phase1Promise;
+        ] = results1;
 
         if (profileData) {
           if (profileData.role) {
@@ -157,7 +164,8 @@ export function useStore(user: User | null) {
           if (settingsData.app_cover || (settingsData as any).appCover) setAppCover(settingsData.app_cover || (settingsData as any).appCover);
         }
 
-        // UNBLOCK UI EARLY - Allow navigation after metadata is in
+        // Mark as synced and unblock UI early
+        localStorage.setItem('arf_synced', 'true');
         setLoading(false);
 
         // Process Phase 2 (Background)
