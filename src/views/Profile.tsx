@@ -216,27 +216,13 @@ export function Profile({
                 <span>{getInitial()}</span>
               )}
             </div>
-            <button 
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadingAvatar}
-              className="absolute bottom-1 right-1 p-2 bg-[#c8a646] text-[#0f0f0f] rounded-full shadow-lg border-2 border-[#1a1a1a] hover:bg-[#e8c666] transition-colors disabled:opacity-50"
-            >
-              <Camera size={14} />
-            </button>
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleAvatarUpload} 
-              accept="image/*" 
-              className="hidden" 
-            />
+            {/* Upload e câmera removidos temporariamente */}
           </div>
         </div>
 
         {/* Space for Avatar */}
         <div className="text-center mt-12 mb-8">
           <h3 className="text-lg font-bold text-white">Foto de Perfil</h3>
-          <p className="text-sm text-gray-400">Clique na câmera para alterar</p>
         </div>
 
         {message && (
